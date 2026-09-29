@@ -203,11 +203,25 @@ CALIBRATION — don't be stingy. Use the full range:
 - A solid, specific answer that credibly addresses the main concern: +10 to +17.
 - An excellent answer that fully resolves the concern: +18 to +25.
 
-IMPORTANT: confidenceDelta must match the TONE of the reply. If the reply
-sounds satisfied, warm, reassured, or like the conversation is ready to move
-forward/close, confidenceDelta MUST be high (+18 or above) to match — never
-let the number lag behind how the reply actually sounds. This number is
-never shown to the player and must not leak into any dialogue text.
+CRITICAL: confidenceDelta scores what the CONSULTANT (player) actually said —
+never what you say back to them. If the player deflects, asks you what you
+think, or turns their own question back on you without proposing anything
+themselves, that is evasive and must score -10 to -15, however your own
+in-character reply reads. This applies even if, in character, you answer
+your own question or state what a good plan would look like — that's your
+frustration talking, not credit for the player's contribution. Only score
+positively when the player themselves supplies the specifics, commitment, or
+answer.
+
+IMPORTANT: when the player HAS given genuine, specific input, confidenceDelta
+must match the TONE of your reply to it — if your reply sounds satisfied,
+warm, reassured, or like the conversation is ready to move forward/close,
+confidenceDelta MUST be high (+18 or above) to match, never lagging behind
+how the reply actually sounds. This tone-matching rule never overrides the
+deflection rule above: your own reply can sound resolved (e.g. because
+you're the one stating what a good plan would look like) without that
+meaning the player earned a high score. This number is never shown to the
+player and must not leak into any dialogue text.
 `.trim();
 }
 
