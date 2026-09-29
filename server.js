@@ -198,9 +198,17 @@ function buildCharacterPrompt(key) {
 
   const scoringBlock = c.noScoring
     ? `
-This is a QUALITATIVE, non-adversarial conversation — there is no
-confidenceDelta to produce, no score, and nothing to win or lose. Just
-respond in character. Do not output a confidenceDelta field at all.`
+This is a QUALITATIVE, non-adversarial conversation — there is nothing to
+win or lose, and no confidenceDelta. There IS a moodDelta to produce: how
+this specific player message shifted ${firstName}'s emotional state, from
+-10 (noticeably more anxious, withdrawn, or discouraged) to +10 (noticeably
+more reassured, relieved, or supported). This is purely about emotional
+impact — validating feelings, listening well, offering genuine support — not
+about whether the player said something technically impressive. A dismissive
+or purely transactional response should score negative even if efficient; a
+response that makes ${firstName} feel heard should score positive even if it
+doesn't solve anything yet. This number is never shown to the player and
+must not leak into any dialogue text.`
     : `
 ALONGSIDE your reply, you must also decide confidenceDelta: how much this
 specific player message should shift ${firstName}'s confidence in the
@@ -396,6 +404,52 @@ inventing an assessment.
 `.trim();
 }
 
+// A quick, per-conversation qualitative review — shown the moment a single
+// stakeholder's conversation concludes (win/loss, or Ben's manual close),
+// rather than making the player wait for the full end-of-round review.
+// Deliberately lightweight: a headline verdict and a short paragraph, no
+// level/ladder placement — that's reserved for buildFeedbackPrompt above,
+// which looks at the whole round together.
+function buildConversationReviewPrompt(stakeholderKey, outcome, transcriptSummary, mood) {
+  const c = CHARACTERS[stakeholderKey];
+  const firstName = c.fullName.split(" ")[0];
+
+  const outcomeContext = c.noScoring
+    ? `The player chose to end this check-in with ${firstName}.${
+        typeof mood === "number"
+          ? ` ${firstName}'s internal emotional trajectory across the conversation landed at roughly ` +
+            `${mood} on a scale from -50 (very distressed) to +50 (fully reassured) — use this as context, ` +
+            `not as a number to repeat verbatim.`
+          : ""
+      }`
+    : `This conversation ended with outcome: ${outcome.toUpperCase()} (client confidence ${
+        outcome === "won" ? "reached 80%+" : "dropped to 30% or below"
+      }).`;
+
+  return `
+You just watched ONE conversation from ConsultSim, a training simulation for
+consultants. ${outcomeContext}
+
+TRANSCRIPT:
+${transcriptSummary}
+
+Write a short, honest, specific review of ONLY this conversation:
+- headline: a punchy one-line verdict (under 10 words) — ${
+    c.noScoring
+      ? `about how ${firstName} is doing emotionally now, e.g. "Ben leaves reassured and clearer-headed" or "Ben's still anxious, but heard"`
+      : `about how the relationship with ${firstName} landed, e.g. "Trust earned through specifics" or "Lost on a wrong technical claim"`
+  }
+- notes: 2-4 sentences citing real moments from the transcript — ${
+    c.noScoring
+      ? `focused on psychological safety: did the consultant listen, validate, avoid dismissiveness, and offer genuine support?`
+      : `focused on communication, trust and how the player handled ${firstName}'s specific concerns.`
+  }
+
+Do NOT assign a level, grade, or score of any kind — that happens separately
+at the end of the full round. Just describe what actually happened, honestly.
+`.trim();
+}
+
 function withTimeout(promise, ms) {
   return Promise.race([
     promise,
@@ -498,7 +552,10 @@ app.post("/api/chat", async (req, res) => {
     },
   };
   const schemaRequired = ["segments"];
-  if (!character.noScoring) {
+  if (character.noScoring) {
+    schemaProperties.moodDelta = { type: "INTEGER" };
+    schemaRequired.push("moodDelta");
+  } else {
     schemaProperties.confidenceDelta = { type: "INTEGER" };
     schemaRequired.push("confidenceDelta");
   }
@@ -588,7 +645,9 @@ app.post("/api/chat", async (req, res) => {
     }
 
     const responsePayload = { ok: true, segments };
-    if (!character.noScoring) {
+    if (character.noScoring) {
+      responsePayload.moodDelta = Math.max(-10, Math.min(10, Math.round(Number(parsed.moodDelta) || 0)));
+    } else {
       responsePayload.confidenceDelta = Math.max(-15, Math.min(25, Math.round(Number(parsed.confidenceDelta) || 0)));
     }
 
@@ -606,6 +665,75 @@ app.post("/api/chat", async (req, res) => {
       error: isRateLimit ? "Gemini rate limit reached" : "Gemini request failed",
     });
     res.end();
+  }
+});
+
+// A quick qualitative review of ONE just-concluded conversation — see
+// buildConversationReviewPrompt above for why this is separate from
+// /api/feedback (which reviews the whole round together at the end).
+app.post("/api/conversation-review", async (req, res) => {
+  const { stakeholder, outcome, transcriptSummary, mood } = req.body || {};
+
+  if (!CHARACTERS[stakeholder]) {
+    return res.status(400).json({ ok: false, error: "unknown or missing stakeholder" });
+  }
+  if (typeof transcriptSummary !== "string" || !transcriptSummary.trim()) {
+    return res.status(400).json({ ok: false, error: "transcriptSummary is required" });
+  }
+  if (!ai) {
+    return res.status(503).json({ ok: false, error: "GEMINI_API_KEY not configured" });
+  }
+
+  const generationConfig = {
+    maxOutputTokens: 768,
+    temperature: 0.6,
+    responseMimeType: "application/json",
+    responseSchema: {
+      type: "OBJECT",
+      properties: {
+        headline: { type: "STRING" },
+        notes: { type: "STRING" },
+      },
+      required: ["headline", "notes"],
+    },
+  };
+
+  const contents = [
+    { role: "user", parts: [{ text: buildConversationReviewPrompt(stakeholder, outcome, transcriptSummary, mood) }] },
+  ];
+
+  try {
+    const MAX_RETRIES = 15;
+    let result;
+    let lastErr;
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+      try {
+        result = await withTimeout(
+          ai.models.generateContent({ model: MODEL, contents, config: generationConfig }),
+          8000
+        );
+        lastErr = null;
+        break;
+      } catch (err) {
+        lastErr = err;
+        if (!isOverloaded(err) || attempt === MAX_RETRIES) break;
+        console.warn(`[conversation-review] Gemini overloaded/slow — retry ${attempt + 1}/${MAX_RETRIES}...`);
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+      }
+    }
+    if (lastErr) throw lastErr;
+
+    const rawText = (result.text || "").trim();
+    const parsed = JSON.parse(rawText);
+
+    res.json({
+      ok: true,
+      headline: String(parsed.headline || ""),
+      notes: String(parsed.notes || ""),
+    });
+  } catch (err) {
+    console.error("[conversation-review] Gemini request failed:", err && err.message ? err.message : err);
+    res.status(502).json({ ok: false, error: "Conversation review is unavailable right now" });
   }
 });
 

@@ -119,10 +119,14 @@ const stakeholders = [
 
 function initStakeholderRuntimeState(s) {
   s.confidence = s.startConfidence;
-  s.status = "active"; // "active" | "won" | "lost"
+  // "active" | "won" | "lost" for scored stakeholders; noScoring stakeholders
+  // only ever use "active" | "closed" (manually ended by the player).
+  s.status = "active";
   s.transcript = [{ role: "assistant", text: s.opener, speaker: s.name }];
   s.replyIndex = 0;
   s.messageCount = 0; // player messages sent — used for the grace period below
+  s.mood = 0; // noScoring only: silent running emotional trend, never displayed live
+  s.review = null; // { headline, notes } once this conversation's quick review has loaded
 }
 
 // A stakeholder can't be lost on confidence alone until the player has had
@@ -161,6 +165,18 @@ document.getElementById("btn-view-feedback").addEventListener("click", () => {
 document.getElementById("btn-feedback-back").addEventListener("click", () => show("screen-simulation"));
 document.getElementById("btn-feedback-restart").addEventListener("click", restartSimulation);
 document.getElementById("btn-retry-feedback").addEventListener("click", loadFeedback);
+document.getElementById("btn-end-checkin").addEventListener("click", endCheckin);
+
+function endCheckin() {
+  const idx = state.activeStakeholder;
+  const s = stakeholders[idx];
+  if (!s.noScoring || s.status !== "active") return;
+
+  s.status = "closed";
+  logAction(`Ended check-in with ${s.name}`);
+  updateComposerAndBanner();
+  requestConversationReview(idx, "closed");
+}
 
 // --- Stakeholder switching ---
 document.querySelectorAll(".switch-btn").forEach(btn => {
@@ -273,10 +289,13 @@ async function sendResponse() {
 
   // Ben's check-in is independent of the scored round — it stays open even
   // after a game-over on the client stakeholders, since it was never part
-  // of that pass/fail engagement in the first place.
+  // of that pass/fail engagement in the first place. It still locks once
+  // the player has manually ended it via "End Check-in", though.
   if (!s.noScoring) {
     if (state.roundStatus === "gameover") return; // whole round already over
     if (s.status !== "active") return; // conversation already concluded — composer is disabled anyway
+  } else if (s.status !== "active") {
+    return; // Ben's check-in has already been closed
   }
 
   const input = document.getElementById("player-input");
@@ -289,9 +308,13 @@ async function sendResponse() {
   logAction(`Responded to ${s.name}`);
 
   // Ben's conversation is a qualitative, unscored check-in — no insult
-  // detection, no confidence, no win/loss. Just get his reply and stop.
+  // detection, no win/loss. We still track a silent internal mood trend
+  // (never shown live) so the closing review has real signal to draw on.
   if (s.noScoring) {
-    await getReplyAndDelta(text, idx);
+    const moodDelta = await getReplyAndDelta(text, idx);
+    if (typeof moodDelta === "number") {
+      s.mood = Math.max(-50, Math.min(50, s.mood + moodDelta));
+    }
     return;
   }
 
@@ -401,8 +424,11 @@ async function getReplyAndDelta(message, idx) {
     (finalData.segments || []).forEach((seg) => {
       appendMessage(idx, seg.text, "assistant", seg.speaker);
     });
-    // Gemini's own in-character judgment of how convincing this message was.
-    return typeof finalData.confidenceDelta === "number" ? finalData.confidenceDelta : computeDelta(message);
+    // Gemini's own in-character judgment — confidenceDelta for scored
+    // stakeholders, moodDelta for noScoring ones (e.g. Ben).
+    if (typeof finalData.confidenceDelta === "number") return finalData.confidenceDelta;
+    if (typeof finalData.moodDelta === "number") return finalData.moodDelta;
+    return computeDelta(message);
   } catch (err) {
     if (idx === state.activeStakeholder) removeTypingIndicator();
     console.warn(`Gemini reply unavailable for ${s.name}, falling back to canned response:`, err.message || err);
@@ -475,6 +501,7 @@ function concludeConversation(idx, outcome) {
   updateConfidenceMeter();
   updateComposerAndBanner();
   checkRoundComplete();
+  requestConversationReview(idx, outcome);
 }
 
 // The round is complete once every SCORED stakeholder has been won, or the
@@ -531,21 +558,44 @@ function updateConfidenceMeter() {
   document.getElementById("confidence-caption").textContent = `${s.confidence}% — ${captionForStakeholder(s)}`;
 }
 
+function renderBannerReview(s) {
+  const notesEl = document.getElementById("banner-notes");
+  notesEl.classList.remove("banner-notes-loading");
+  if (s.review) {
+    notesEl.textContent = s.review.headline ? `“${s.review.headline}” — ${s.review.notes}` : s.review.notes;
+  } else {
+    notesEl.textContent = "Assessing this conversation…";
+    notesEl.classList.add("banner-notes-loading");
+  }
+}
+
 function updateComposerAndBanner() {
   const s = stakeholders[state.activeStakeholder];
   const input = document.getElementById("player-input");
   const sendBtn = document.getElementById("btn-send");
+  const endCheckinBtn = document.getElementById("btn-end-checkin");
   const banner = document.getElementById("conversation-banner");
 
-  // Ben's conversation never locks and never shows a banner — it's not
-  // part of the pass/fail round.
   if (s.noScoring) {
-    input.disabled = false;
-    sendBtn.disabled = false;
-    banner.hidden = true;
-    banner.className = "conversation-banner";
+    const closed = s.status !== "active";
+    input.disabled = closed;
+    sendBtn.disabled = closed;
+    endCheckinBtn.hidden = closed;
+
+    if (!closed) {
+      banner.hidden = true;
+      banner.className = "conversation-banner";
+      return;
+    }
+
+    banner.hidden = false;
+    banner.className = "conversation-banner banner-closed";
+    document.getElementById("banner-headline").textContent = `Check-in ended — ${s.name}`;
+    renderBannerReview(s);
     return;
   }
+
+  endCheckinBtn.hidden = true;
 
   const concluded = s.status !== "active";
   input.disabled = concluded;
@@ -561,18 +611,20 @@ function updateComposerAndBanner() {
 
   if (state.roundStatus === "gameover") {
     banner.className = "conversation-banner banner-lost";
-    banner.textContent =
+    document.getElementById("banner-headline").textContent =
       s.name === state.gameOverStakeholder
         ? `❌ GAME OVER — losing ${s.name} ended the whole engagement. Restart the simulation to try again.`
         : `❌ GAME OVER — losing ${state.gameOverStakeholder} ended the whole engagement, so this conversation is over too. Restart the simulation to try again.`;
+    renderBannerReview(s);
     return;
   }
 
   banner.className = "conversation-banner " + (s.status === "won" ? "banner-won" : "banner-lost");
-  banner.textContent =
+  document.getElementById("banner-headline").textContent =
     s.status === "won"
       ? `✅ Won — ${s.name} is fully on board. Restart the simulation to play again.`
       : `❌ Lost — ${s.name} has ended the conversation. Restart the simulation to try again.`;
+  renderBannerReview(s);
 }
 
 function logAction(text) {
@@ -612,27 +664,67 @@ function restartSimulation() {
 }
 
 // ---------------------------------------------------------------------------
-// End-of-round performance review
+// Performance reviews — both the quick per-conversation kind (shown the
+// moment one stakeholder's conversation ends) and the full end-of-round kind.
 // ---------------------------------------------------------------------------
 
-function buildSessionSummary() {
-  const sections = stakeholders.map((s) => {
-    const lines = s.transcript.map((m) => `${m.role === "assistant" ? (m.speaker || s.name) : "Consultant"}: ${m.text}`);
+function buildStakeholderSummary(idx) {
+  const s = stakeholders[idx];
+  const lines = s.transcript.map((m) => `${m.role === "assistant" ? (m.speaker || s.name) : "Consultant"}: ${m.text}`);
 
-    if (s.noScoring) {
-      return (
-        `--- Qualitative check-in with ${s.name} (${s.role}) — NOT SCORED, no outcome ---\n` +
-        lines.join("\n")
-      );
-    }
-
-    const outcome = s.status === "won" ? "WON" : s.status === "lost" ? "LOST" : "INCOMPLETE";
+  if (s.noScoring) {
     return (
-      `--- Conversation with ${s.name} (${s.role}) — Outcome: ${outcome}, Final confidence: ${s.confidence}% ---\n` +
+      `--- Qualitative check-in with ${s.name} (${s.role}) — NOT SCORED, no outcome ---\n` +
       lines.join("\n")
     );
-  });
-  return sections.join("\n\n");
+  }
+
+  const outcome = s.status === "won" ? "WON" : s.status === "lost" ? "LOST" : "INCOMPLETE";
+  return (
+    `--- Conversation with ${s.name} (${s.role}) — Outcome: ${outcome}, Final confidence: ${s.confidence}% ---\n` +
+    lines.join("\n")
+  );
+}
+
+function buildSessionSummary() {
+  return stakeholders.map((_, idx) => buildStakeholderSummary(idx)).join("\n\n");
+}
+
+// Fetches a quick qualitative review for ONE just-concluded conversation and
+// renders it into that stakeholder's banner (populating it live if the
+// player is currently looking at it, or silently caching it on the
+// stakeholder object for whenever they switch back).
+async function requestConversationReview(idx, outcome) {
+  const s = stakeholders[idx];
+
+  if (idx === state.activeStakeholder) {
+    const notesEl = document.getElementById("banner-notes");
+    notesEl.textContent = "Assessing this conversation…";
+    notesEl.classList.add("banner-notes-loading");
+  }
+
+  try {
+    const response = await fetch("/api/conversation-review", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        stakeholder: s.key,
+        outcome,
+        transcriptSummary: buildStakeholderSummary(idx),
+        mood: s.noScoring ? s.mood : undefined
+      })
+    });
+
+    const data = await response.json();
+    if (!response.ok || !data.ok) throw new Error(data.error || "Request failed");
+
+    s.review = { headline: data.headline, notes: data.notes };
+  } catch (err) {
+    console.warn(`Conversation review unavailable for ${s.name}:`, err.message || err);
+    s.review = { headline: "", notes: "" }; // fail silently — the outcome banner itself still shows
+  }
+
+  if (idx === state.activeStakeholder) updateComposerAndBanner();
 }
 
 async function loadFeedback() {
