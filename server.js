@@ -204,14 +204,23 @@ CALIBRATION — don't be stingy. Use the full range:
 - An excellent answer that fully resolves the concern: +18 to +25.
 
 CRITICAL: confidenceDelta scores what the CONSULTANT (player) actually said —
-never what you say back to them. If the player deflects, asks you what you
-think, or turns their own question back on you without proposing anything
-themselves, that is evasive and must score -10 to -15, however your own
-in-character reply reads. This applies even if, in character, you answer
-your own question or state what a good plan would look like — that's your
-frustration talking, not credit for the player's contribution. Only score
-positively when the player themselves supplies the specifics, commitment, or
-answer.
+never what you say back to them. This applies even if, in character, you
+answer your own question or state what a good plan would look like — that's
+your frustration talking, not credit for the player's contribution. Only
+score positively when the player themselves supplies specifics, a
+commitment, or a real answer.
+
+However, distinguish two different kinds of question-back:
+- A HOLLOW deflection with no engagement — "What do you think we should
+  do?", "I don't know, what would you suggest?" — contributes nothing and
+  scores -10 to -15.
+- A GENUINE discovery or clarifying question that shows the consultant is
+  actively listening and trying to understand your actual priorities before
+  proposing something — e.g. asking what success looks like from your
+  perspective, or what your biggest concern is — is a legitimate, normal
+  consulting technique, especially early in an engagement. This is not a
+  proposal or commitment, so it shouldn't score highly either, but it should
+  land in the neutral band (-4 to +4), not be punished as evasive.
 
 IMPORTANT: when the player HAS given genuine, specific input, confidenceDelta
 must match the TONE of your reply to it — if your reply sounds satisfied,

@@ -102,7 +102,14 @@ function initStakeholderRuntimeState(s) {
   s.status = "active"; // "active" | "won" | "lost"
   s.transcript = [{ role: "assistant", text: s.opener, speaker: s.name }];
   s.replyIndex = 0;
+  s.messageCount = 0; // player messages sent — used for the grace period below
 }
+
+// A stakeholder can't be lost on confidence alone until the player has had
+// at least this many messages to recover — one rough answer shouldn't end
+// the whole round outright. Insults are exempt: those end things immediately
+// regardless of grace, since that's a deliberate, unambiguous action.
+const LOSS_GRACE_MESSAGES = 2;
 
 stakeholders.forEach(initStakeholderRuntimeState);
 
@@ -253,6 +260,7 @@ async function sendResponse() {
 
   appendMessage(idx, text, "user");
   input.value = "";
+  s.messageCount++;
 
   logAction(`Responded to ${s.name}`);
 
@@ -396,7 +404,7 @@ function applyConfidenceDelta(idx, delta) {
   if (idx === state.activeStakeholder) updateConfidenceMeter();
 
   if (s.confidence >= WIN_THRESHOLD) return "won";
-  if (s.confidence <= LOSE_THRESHOLD) return "lost";
+  if (s.confidence <= LOSE_THRESHOLD && s.messageCount >= LOSS_GRACE_MESSAGES) return "lost";
   return null;
 }
 
