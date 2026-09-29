@@ -394,17 +394,29 @@ function computeDelta(text) {
 // Applies a confidence change to a stakeholder, updates their sentiment tag
 // (and the main meter if they're the active stakeholder), and returns
 // "won" / "lost" if this change just crossed a threshold, else null.
+//
+// Losing below LOSE_THRESHOLD is momentum-based, not a flat floor: once past
+// the grace period, a message only loses the conversation if confidence
+// actually DROPPED and landed at or below the threshold — whether that's
+// falling from above the line, or falling further while already below it.
+// Recovering upward while still below the threshold keeps you in the game,
+// however small the improvement, since you're heading the right way.
 function applyConfidenceDelta(idx, delta) {
   const s = stakeholders[idx];
   if (s.status !== "active") return null;
 
+  const previousConfidence = s.confidence;
   s.confidence = Math.max(0, Math.min(100, s.confidence + delta));
 
   updateSentimentRow(idx);
   if (idx === state.activeStakeholder) updateConfidenceMeter();
 
   if (s.confidence >= WIN_THRESHOLD) return "won";
-  if (s.confidence <= LOSE_THRESHOLD && s.messageCount >= LOSS_GRACE_MESSAGES) return "lost";
+
+  const pastGrace = s.messageCount >= LOSS_GRACE_MESSAGES;
+  const droppedToOrBelowThreshold = s.confidence <= LOSE_THRESHOLD && s.confidence < previousConfidence;
+  if (pastGrace && droppedToOrBelowThreshold) return "lost";
+
   return null;
 }
 
