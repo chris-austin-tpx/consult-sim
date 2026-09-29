@@ -4,7 +4,6 @@
 
 require("dotenv").config();
 const express = require("express");
-const path = require("path");
 const { GoogleGenAI } = require("@google/genai");
 
 const PORT = process.env.PORT || 3000;
@@ -19,7 +18,7 @@ const ai = GEMINI_API_KEY ? new GoogleGenAI({ apiKey: GEMINI_API_KEY }) : null;
 
 // ---------------------------------------------------------------------------
 // Fictional Project Phoenix scenario content (synthetic only — nothing
-// internal to TPX or any real client is ever included here or sent to Gemini).
+// internal to any real company or client is ever included here or sent to Gemini).
 // ---------------------------------------------------------------------------
 const SCENARIO_BRIEFING = `
 You are a character in ConsultSim, a training simulation for consultants.
