@@ -1,0 +1,12 @@
+node_modules/
+.env
+
+# Company-internal reference documents — never commit these.
+# (e.g. progression framework / behaviours & impact spreadsheets used to
+# design the performance-review feature; the framework content itself only
+# lives in a paraphrased form inside server.js, not as source files here.)
+Progression Framework*
+*progression*framework*
+*behaviours*impact*
+*.xlsx
+*.xls

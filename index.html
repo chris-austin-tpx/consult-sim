@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ConsultSim — Project Phoenix</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<div id="app">
+
+  <!-- SCREEN 1: WELCOME -->
+  <section id="screen-welcome" class="screen active">
+    <div class="welcome-card">
+      <div class="logo">ConsultSim</div>
+      <h1>Project Phoenix</h1>
+      <p class="subtitle">A client engagement simulation for consultants</p>
+      <p class="welcome-copy">
+        You've just been assigned as lead consultant on <strong>Project Phoenix</strong>,
+        a high-stakes data platform migration for a long-standing client. Three stakeholders
+        are waiting to hear from you. How you communicate, prioritise and navigate pressure
+        will determine whether this engagement succeeds.
+      </p>
+      <button class="btn btn-primary" id="btn-start">Begin Engagement</button>
+    </div>
+  </section>
+
+  <!-- SCREEN 2: BRIEFING -->
+  <section id="screen-briefing" class="screen">
+    <div class="page-header">
+      <div class="logo-small">ConsultSim</div>
+      <div class="step-indicator">Step 1 of 3 — Project Briefing</div>
+    </div>
+
+    <div class="content-grid">
+      <div class="card">
+        <h2>Client Objectives</h2>
+        <ul class="bullet-list">
+          <li>Migrate the client's legacy on-premise Teradata data warehouse to Azure Databricks, adopting a modern lakehouse architecture.</li>
+          <li>Consolidate 14 disparate reporting systems into a single governed analytics layer.</li>
+          <li>Reduce month-end financial close reporting time from 9 days to 3 days.</li>
+          <li>Establish a foundation for future AI/ML use cases across the business.</li>
+        </ul>
+      </div>
+
+      <div class="card">
+        <h2>Timeline</h2>
+        <div class="timeline">
+          <div class="timeline-item">
+            <span class="timeline-date">Weeks 1–3</span>
+            <span class="timeline-desc">Discovery &amp; current-state assessment</span>
+          </div>
+          <div class="timeline-item">
+            <span class="timeline-date">Weeks 4–10</span>
+            <span class="timeline-desc">Platform build &amp; pilot migration (Finance domain)</span>
+          </div>
+          <div class="timeline-item">
+            <span class="timeline-date">Weeks 11–18</span>
+            <span class="timeline-desc">Full data migration &amp; parallel run</span>
+          </div>
+          <div class="timeline-item">
+            <span class="timeline-date">Weeks 19–20</span>
+            <span class="timeline-desc">Cutover &amp; legacy decommission</span>
+          </div>
+        </div>
+        <p class="deadline-note">⚠ Go-live is fixed to align with the client's new financial year — <strong>20 weeks</strong>, non-negotiable.</p>
+      </div>
+
+      <div class="card card-wide">
+        <h2>Key Risks</h2>
+        <div class="risk-grid">
+          <div class="risk-item risk-high">
+            <span class="risk-label">High</span>
+            <p>Finance team has limited capacity to support UAT alongside month-end close cycles.</p>
+          </div>
+          <div class="risk-item risk-high">
+            <span class="risk-label">High</span>
+            <p>Legacy data quality is unknown — early profiling suggests significant duplication in customer records.</p>
+          </div>
+          <div class="risk-item risk-medium">
+            <span class="risk-label">Medium</span>
+            <p>Client's internal IT team has expressed concern about losing control of infrastructure decisions.</p>
+          </div>
+          <div class="risk-item risk-medium">
+            <span class="risk-label">Medium</span>
+            <p>Budget was set before scope included the 14-system consolidation — contingency is thin.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="nav-buttons">
+      <button class="btn btn-secondary" id="btn-back-welcome">Back</button>
+      <button class="btn btn-primary" id="btn-to-stakeholders">Meet the Stakeholders</button>
+    </div>
+  </section>
+
+  <!-- SCREEN 3: STAKEHOLDERS -->
+  <section id="screen-stakeholders" class="screen">
+    <div class="page-header">
+      <div class="logo-small">ConsultSim</div>
+      <div class="step-indicator">Step 2 of 3 — Key Stakeholders</div>
+    </div>
+
+    <div class="stakeholder-grid">
+
+      <div class="stakeholder-card">
+        <div class="avatar avatar-1">JM</div>
+        <h3>Jenny Mensah</h3>
+        <div class="role">Chief Financial Officer</div>
+        <p class="personality"><strong>Personality:</strong> Direct, numbers-driven, impatient with vague answers. Values precision and accountability.</p>
+        <p class="motivation"><strong>Motivation:</strong> Needs month-end close fixed before the next board cycle. Her reputation is tied to this project's ROI.</p>
+      </div>
+
+      <div class="stakeholder-card">
+        <div class="avatar avatar-2">DK</div>
+        <h3>David Kowalski</h3>
+        <div class="role">Head of IT Infrastructure</div>
+        <p class="personality"><strong>Personality:</strong> Cautious, protective of his team, skeptical of external consultants "telling him how to run his systems."</p>
+        <p class="motivation"><strong>Motivation:</strong> Wants to retain operational control and avoid being blamed if the migration causes outages.</p>
+        <p class="motivation"><strong>Note:</strong> David will bring his senior cloud engineer, Satish Patel, into your conversation — expect some technical questions about Azure Databricks.</p>
+      </div>
+
+      <div class="stakeholder-card">
+        <div class="avatar avatar-3">PA</div>
+        <h3>Priya Anand</h3>
+        <div class="role">Finance Operations Manager</div>
+        <p class="personality"><strong>Personality:</strong> Pragmatic, overworked, genuinely wants the project to succeed but has little spare time to help.</p>
+        <p class="motivation"><strong>Motivation:</strong> Needs UAT to not add to her team's workload during month-end close — or she'll push back hard on timelines.</p>
+      </div>
+
+    </div>
+
+    <div class="nav-buttons">
+      <button class="btn btn-secondary" id="btn-back-briefing">Back</button>
+      <button class="btn btn-primary" id="btn-to-simulation">Start Simulation</button>
+    </div>
+  </section>
+
+  <!-- SCREEN 4: SIMULATION -->
+  <section id="screen-simulation" class="screen">
+    <div class="page-header">
+      <div class="logo-small">ConsultSim</div>
+      <div class="step-indicator">Step 3 of 3 — Live Engagement</div>
+    </div>
+
+    <div class="sim-layout">
+
+      <!-- Conversation panel -->
+      <div class="conversation-panel">
+        <div class="conversation-header">
+          <div class="avatar avatar-1 avatar-sm" id="active-avatar">JM</div>
+          <div>
+            <div class="active-name" id="active-name">Jenny Mensah</div>
+            <div class="active-role" id="active-role">Chief Financial Officer</div>
+          </div>
+          <div class="stakeholder-switcher">
+            <button class="switch-btn active" data-stakeholder="0">JM</button>
+            <button class="switch-btn" data-stakeholder="1">DK</button>
+            <button class="switch-btn" data-stakeholder="2">PA</button>
+          </div>
+        </div>
+
+        <div class="messages" id="messages"></div>
+
+        <div class="conversation-banner" id="conversation-banner" hidden></div>
+
+        <div class="composer" id="composer">
+          <textarea id="player-input" placeholder="Type your response..." rows="2"></textarea>
+          <button class="btn btn-primary" id="btn-send">Send</button>
+        </div>
+      </div>
+
+      <!-- Status panel -->
+      <div class="status-panel">
+        <h3>Project Status</h3>
+
+        <div class="status-block">
+          <div class="status-label">Phase</div>
+          <div class="status-value">Discovery — Week 2 of 20</div>
+        </div>
+
+        <div class="status-block">
+          <div class="status-label" id="confidence-label">Client Confidence — Jenny Mensah</div>
+          <div class="meter"><div class="meter-fill" id="meter-confidence" style="width:50%"></div></div>
+          <div class="meter-caption" id="confidence-caption">50% — Neutral</div>
+        </div>
+
+        <div class="status-block">
+          <div class="status-label">Stakeholder Sentiment</div>
+          <div class="sentiment-row">
+            <span class="sentiment-name">Jenny Mensah</span>
+            <span class="sentiment-tag sentiment-neutral">Neutral</span>
+          </div>
+          <div class="sentiment-row">
+            <span class="sentiment-name">David Kowalski</span>
+            <span class="sentiment-tag sentiment-wary">Wary</span>
+          </div>
+          <div class="sentiment-row">
+            <span class="sentiment-name">Priya Anand</span>
+            <span class="sentiment-tag sentiment-positive">Supportive</span>
+          </div>
+        </div>
+
+        <div class="status-block">
+          <div class="status-label">Open Risks</div>
+          <ul class="status-risk-list">
+            <li>Finance UAT capacity during close</li>
+            <li>Unverified data quality in customer records</li>
+          </ul>
+        </div>
+
+        <div class="status-block">
+          <div class="status-label">Your Actions Log</div>
+          <ul class="action-log" id="action-log">
+            <li class="log-empty">No actions taken yet.</li>
+          </ul>
+        </div>
+      </div>
+
+    </div>
+
+    <div class="nav-buttons">
+      <button class="btn btn-secondary" id="btn-back-stakeholders">Back to Stakeholders</button>
+      <div class="nav-buttons-right">
+        <button class="btn btn-primary" id="btn-view-feedback" hidden>View Performance Review</button>
+        <button class="btn btn-secondary" id="btn-restart">Restart Simulation</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- SCREEN 5: PERFORMANCE REVIEW -->
+  <section id="screen-feedback" class="screen">
+    <div class="page-header">
+      <div class="logo-small">ConsultSim</div>
+      <div class="step-indicator">Performance Review</div>
+    </div>
+
+    <div id="feedback-loading" class="feedback-loading">
+      <div class="spinner"></div>
+      <p>Analysing your performance across the engagement…</p>
+    </div>
+
+    <div id="feedback-content" class="feedback-content" hidden>
+      <div class="card feedback-level-card">
+        <div class="status-label">Assessed Level</div>
+        <div id="feedback-level" class="feedback-level"></div>
+        <p id="feedback-summary" class="feedback-summary"></p>
+      </div>
+
+      <div class="content-grid">
+        <div class="card">
+          <h2>Strengths</h2>
+          <ul class="bullet-list" id="feedback-strengths"></ul>
+        </div>
+        <div class="card">
+          <h2>Areas to Improve</h2>
+          <ul class="bullet-list" id="feedback-growth"></ul>
+        </div>
+        <div class="card card-wide">
+          <h2>To Reach the Next Level</h2>
+          <p id="feedback-next-level" class="feedback-next-level"></p>
+        </div>
+      </div>
+    </div>
+
+    <div id="feedback-error" class="feedback-error" hidden>
+      <p>Performance review is unavailable right now (Gemini may be under heavy load). Please try again shortly.</p>
+      <button class="btn btn-secondary" id="btn-retry-feedback">Try Again</button>
+    </div>
+
+    <div class="nav-buttons">
+      <button class="btn btn-secondary" id="btn-feedback-back">Back to Simulation</button>
+      <button class="btn btn-secondary" id="btn-feedback-restart">Restart Simulation</button>
+    </div>
+  </section>
+
+</div>
+
+<script src="script.js"></script>
+</body>
+</html>
