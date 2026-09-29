@@ -266,7 +266,7 @@ body {
 /* ---------- Stakeholders screen ---------- */
 .stakeholder-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   gap: 20px;
 }
 
@@ -275,6 +275,11 @@ body {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 24px;
+}
+
+.stakeholder-card-support {
+  border-style: dashed;
+  border-color: var(--accent-soft);
 }
 
 .avatar {
@@ -293,6 +298,7 @@ body {
 .avatar-1 { background: linear-gradient(135deg, #5b8def, #3f6fd1); }
 .avatar-2 { background: linear-gradient(135deg, #f0b84b, #d99a2b); }
 .avatar-3 { background: linear-gradient(135deg, #3ecf8e, #24a06b); }
+.avatar-4 { background: linear-gradient(135deg, #a78bfa, #7c5ce0); }
 
 .stakeholder-card h3 {
   margin: 0 0 2px;
@@ -641,6 +647,28 @@ body {
   font-size: 14px;
   line-height: 1.7;
   margin: 0;
+}
+
+.feedback-support-card {
+  border-style: dashed;
+  border-color: var(--accent-soft);
+}
+
+.feedback-support-subtitle {
+  font-size: 12px;
+  color: var(--text-dim);
+  font-style: italic;
+  margin: -4px 0 12px;
+}
+
+/* Qualitative-mode confidence panel (e.g. Ben's check-in) */
+.confidence-qualitative #confidence-meter-wrap {
+  display: none;
+}
+
+.confidence-qualitative #confidence-caption {
+  color: var(--text-dim);
+  font-style: italic;
 }
 
 .feedback-error {

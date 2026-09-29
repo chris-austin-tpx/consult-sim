@@ -149,6 +149,35 @@ he can just speak directly from then on.`,
       "offers a concrete plan that avoids that window, you're genuinely relieved " +
       "and cooperative.",
   },
+  ben: {
+    fullName: "Ben Carter",
+    role: "Junior Developer",
+    pronoun: "his",
+    // This conversation is deliberately not scored — see the psychological
+    // safety notes in PERFORMANCE_RUBRIC for why. No win/loss, no confidence
+    // number, no hard fail.
+    noScoring: true,
+    personality:
+      "Earnest and hardworking, but currently overwhelmed. Second-guesses " +
+      "himself under pressure and worries about looking incompetent in " +
+      "front of the team.",
+    privateMotivation:
+      "He's afraid he's not good enough for this project and worried about " +
+      "letting David and the wider team down. He hasn't felt comfortable " +
+      "raising how stuck he's been feeling until now.",
+    styleNotes:
+      "This is not an adversarial conversation and Ben isn't trying to be " +
+      "won over or convinced of anything — he's not evaluating the " +
+      "consultant, he's just a stressed colleague reaching out. If the " +
+      "consultant listens, validates how he's feeling without dismissing " +
+      "it, and offers genuine, concrete support, he visibly relaxes and " +
+      "opens up more about what's actually blocking him technically. If " +
+      "the consultant is dismissive, purely transactional, or brushes past " +
+      "his feelings to jump straight to logistics, he becomes more guarded " +
+      "and hesitant, second-guessing whether it was worth bringing this up " +
+      "— but he never ends the conversation or shuts it down entirely; " +
+      "this is a supportive check-in, not something to be won or lost.",
+  },
 };
 
 function buildCharacterPrompt(key) {
@@ -167,32 +196,12 @@ function buildCharacterPrompt(key) {
       `from ${c.colleague.name} when the briefing above says he should speak.`
     : `You produce your in-character reply as a single dialogue segment, speaker "${c.fullName}".`;
 
-  return `
-You are role-playing as ${c.fullName.toUpperCase()}, ${c.role} of the fictional
-client in Project Phoenix. You are talking to a consultant (the player) who is
-leading this engagement.
-${c.colleague ? `\n${c.colleague.name.toUpperCase()} (${c.colleague.role}) is also present in this meeting, reporting to ${firstName}.\n` : ""}
-PERSONALITY: ${c.personality}
-
-MOTIVATION (private — never state this explicitly to the player): ${c.privateMotivation}
-${technicalBlock}${colleagueBlock}
-RULES YOU MUST FOLLOW:
-- Stay in character as ${firstName}${c.colleague ? ` (and ${c.colleague.name} when he speaks)` : ""} at all times. Never break
-  the fourth wall, never mention that you are an AI, a model, or a simulation.
-- Respond naturally and conversationally, as busy professionals would in a
-  real meeting — concise, not a wall of text (each segment typically 1-3 sentences).
-- Remember and reference commitments, dates or numbers the consultant gave
-  you earlier in this conversation. Hold them accountable if they contradict
-  themselves.
-- Never reveal private motivations, internal feelings, or any "assessment" of
-  the player's performance. You are not a coach or narrator — you are simply
-  the people in this meeting, having a conversation.
-- Never give the player meta feedback, scores, or hints about how well they
-  are doing. Stay entirely in-world.
-- ${c.styleNotes}
-
-OUTPUT SHAPE: ${outputShape}
-
+  const scoringBlock = c.noScoring
+    ? `
+This is a QUALITATIVE, non-adversarial conversation — there is no
+confidenceDelta to produce, no score, and nothing to win or lose. Just
+respond in character. Do not output a confidenceDelta field at all.`
+    : `
 ALONGSIDE your reply, you must also decide confidenceDelta: how much this
 specific player message should shift ${firstName}'s confidence in the
 consultant, from -15 (seriously damaging — evasive, dismissive, ignores your
@@ -200,11 +209,11 @@ concerns) to +25 (excellent — fully resolves what you actually care about).
 Base this purely on how convincing the message was, not on message length.
 A short but sharp, on-point answer can score well; a long but vague or
 evasive one should score poorly.${
-    c.colleague
-      ? ` A technically wrong answer that ${c.colleague.name} has to correct should score negatively even if ` +
-        `it sounded confident; a technically solid answer ${c.colleague.name} confirms should score highly.`
-      : ""
-  }
+        c.colleague
+          ? ` A technically wrong answer that ${c.colleague.name} has to correct should score negatively even if ` +
+            `it sounded confident; a technically solid answer ${c.colleague.name} confirms should score highly.`
+          : ""
+      }
 
 CALIBRATION — don't be stingy. Use the full range:
 - A weak, evasive or generic answer: -15 to -5.
@@ -239,7 +248,34 @@ how the reply actually sounds. This tone-matching rule never overrides the
 deflection rule above: your own reply can sound resolved (e.g. because
 you're the one stating what a good plan would look like) without that
 meaning the player earned a high score. This number is never shown to the
-player and must not leak into any dialogue text.
+player and must not leak into any dialogue text.`;
+
+  return `
+You are role-playing as ${c.fullName.toUpperCase()}, ${c.role}${
+    c.noScoring ? " on the fictional Project Phoenix team" : " of the fictional client in Project Phoenix"
+  }. You are talking to a consultant (the player)${c.noScoring ? " on the engagement" : " who is leading this engagement"}.
+${c.colleague ? `\n${c.colleague.name.toUpperCase()} (${c.colleague.role}) is also present in this meeting, reporting to ${firstName}.\n` : ""}
+PERSONALITY: ${c.personality}
+
+${c.noScoring ? "CONTEXT" : "MOTIVATION"} (private — never state this explicitly to the player): ${c.privateMotivation}
+${technicalBlock}${colleagueBlock}
+RULES YOU MUST FOLLOW:
+- Stay in character as ${firstName}${c.colleague ? ` (and ${c.colleague.name} when he speaks)` : ""} at all times. Never break
+  the fourth wall, never mention that you are an AI, a model, or a simulation.
+- Respond naturally and conversationally, as busy professionals would in a
+  real meeting — concise, not a wall of text (each segment typically 1-3 sentences).
+- Remember and reference commitments, dates or numbers the consultant gave
+  you earlier in this conversation. Hold them accountable if they contradict
+  themselves.
+- Never reveal private motivations, internal feelings, or any "assessment" of
+  the player's performance. You are not a coach or narrator — you are simply
+  the people in this meeting, having a conversation.
+- Never give the player meta feedback, scores, or hints about how well they
+  are doing. Stay entirely in-world.
+- ${c.styleNotes}
+
+OUTPUT SHAPE: ${outputShape}
+${scoringBlock}
 `.trim();
 }
 
@@ -259,52 +295,60 @@ function buildSystemInstruction(stakeholderKey, projectState) {
 // ---------------------------------------------------------------------------
 // End-of-round performance rubric.
 //
-// This is an ORIGINAL, paraphrased condensation of ConsultSim's internal
-// consulting-competency ladder — written from scratch for this simulation,
-// not copied from any source document. It intentionally narrows the ladder
-// to the five rungs most meaningfully observable from a short simulated
-// client conversation (Junior/Graduate through Principal); more senior
-// rungs describe organisation-wide leadership that a single conversation
-// can't evidence either way.
+// This is an ORIGINAL, paraphrased condensation of general consulting
+// competency areas — written from scratch for this simulation, not copied
+// from any source document. It's loosely organised around three broad
+// pillars common to consulting-skills frameworks (building trust with the
+// people you work for, working well with the people you work alongside, and
+// looking after the sustainability of the work itself), expressed as five
+// behavioural dimensions with per-level descriptions. It intentionally
+// narrows the ladder to the five rungs most meaningfully observable from a
+// short simulated conversation (Junior/Graduate through Principal); more
+// senior rungs describe organisation-wide leadership that a single
+// conversation can't evidence either way.
 // ---------------------------------------------------------------------------
 const PERFORMANCE_LEVELS = ["Junior / Graduate", "Mid", "Senior", "Lead", "Principal"];
 
 const PERFORMANCE_RUBRIC = `
-You are assessing a consultant's performance in a single simulated client
-engagement, against five behavioural dimensions. For each dimension, here is
-what distinguishes each level — use these as reference points, not a rigid
-checklist, since a short conversation won't cleanly evidence every dimension
-at every level.
+You are assessing a consultant's performance in a single simulated engagement,
+against five behavioural dimensions loosely grouped under three broader
+pillars: building trust and influence with the people you're there to serve;
+working well and collaboratively with the people around you (including
+creating genuine psychological safety for colleagues, not just clients); and
+looking after the sustainability and quality of the work itself. For each
+dimension, here is what distinguishes each level — use these as reference
+points, not a rigid checklist, since a short conversation won't cleanly
+evidence every dimension at every level.
 
-1. CLARITY & TRUST IN COMMUNICATION
+1. CLARITY & TRUST IN COMMUNICATION (trust & influence)
    - Junior/Graduate: communicates politely but generically; doesn't yet adapt tone to the specific stakeholder's concerns.
    - Mid: tailors language to the audience; is consistent and delivers on what they say.
    - Senior: builds real trust through directness and clarity, even under pushback; reads the room.
    - Lead: shapes how the conversation itself is framed, connecting points back to what the client actually cares about.
    - Principal: handles the most senior, highest-stakes exchanges with total command of tone and framing.
 
-2. OWNERSHIP & FOLLOW-THROUGH
+2. OWNERSHIP & FOLLOW-THROUGH (sustainable delivery)
    - Junior/Graduate: engages with what's asked but leans on others for direction.
    - Mid: takes ownership of their own commitments and follows through consistently.
    - Senior: proactively flags risks and issues before being asked; sets realistic expectations.
    - Lead: takes visible accountability for outcomes, not just tasks; anticipates problems ahead of time.
    - Principal: owns the full commercial and strategic outcome of the engagement.
 
-3. HANDLING COMPLEXITY, AMBIGUITY & PUSHBACK
+3. HANDLING COMPLEXITY, AMBIGUITY & PUSHBACK (sustainable delivery)
    - Junior/Graduate: asks clarifying questions when something is unclear rather than guessing.
    - Mid: works through ambiguous asks by breaking them into smaller, addressable parts.
    - Senior: makes sound calls under pressure with incomplete information; sets clear, defensible boundaries.
    - Lead: connects individual decisions back to the client's broader goals; shapes scope proactively.
    - Principal: makes high-stakes calls under real ambiguity and stands behind them.
 
-4. SUPPORTIVE, COLLABORATIVE MINDSET
+4. SUPPORTIVE, COLLABORATIVE MINDSET & PSYCHOLOGICAL SAFETY (collaborative working)
    - Junior/Graduate: is receptive to feedback and doesn't get defensive under challenge.
    - Mid: gives as well as receives feedback constructively.
-   - Senior: actively builds trust and psychological safety in how they engage others.
+   - Senior: actively builds trust and psychological safety in how they engage others — including junior colleagues who are struggling, not just clients.
    - Lead: mentors and empowers others visibly, even within a single conversation's framing.
    - Principal: models the standard for how difficult people-situations should be handled.
 
-5. LEARNING & ADAPTABILITY
+5. LEARNING & ADAPTABILITY (trust & influence)
    - Junior/Graduate: shows curiosity and adjusts quickly when corrected.
    - Mid: proactively seeks out what they don't know rather than avoiding it.
    - Senior: visibly updates their approach mid-conversation based on new information.
@@ -320,15 +364,35 @@ ${PERFORMANCE_RUBRIC}
 
 You are reviewing a consultant's performance across a fictional training
 simulation ("Project Phoenix") in which they held conversations with up to
-three stakeholders. Below is what happened in each conversation they engaged
-with, including the final outcome.
+three CLIENT stakeholders (scored, contributing to the level assessment
+above) and, separately, may have had a check-in with a junior colleague
+named Ben Carter, who was feeling overwhelmed and reached out for support.
+The Ben conversation is NOT scored and doesn't affect the level — it exists
+purely to observe how the consultant handles psychological safety with a
+struggling colleague, which is real signal for dimension 4 above and for the
+separate psychologicalSafetyNotes field you'll produce.
+
+Below is what happened in each conversation.
 
 ${sessionSummary}
 
-Based ONLY on the above, assess the consultant's overall performance. Be
+Based ONLY on the above, assess the consultant's overall performance (level,
+summary, strengths, growthAreas, nextLevelFocus — drawing only on the three
+scored client conversations for the level itself, though the Ben conversation
+can still inform dimension 4 commentary within strengths/growthAreas). Be
 honest and specific — cite real moments from the conversations, not generic
 praise. If a dimension didn't come up enough to judge, say so rather than
 guessing.
+
+SEPARATELY, write psychologicalSafetyNotes: a short, qualitative paragraph
+specifically about the Ben conversation, if one happened. This is
+deliberately NOT a score or a pass/fail — describe what the consultant did
+well and what they could have done differently in supporting him, in plain,
+human terms. If the consultant never engaged with Ben at all in this
+session, say that plainly (e.g. "You didn't check in with Ben this time —
+worth remembering that psychological safety often means noticing when
+someone needs that conversation before they ask for it.") rather than
+inventing an assessment.
 `.trim();
 }
 
@@ -420,6 +484,25 @@ app.post("/api/chat", async (req, res) => {
   const character = CHARACTERS[stakeholder];
   const speakerNames = [character.fullName, ...(character.colleague ? [character.colleague.name] : [])];
 
+  const schemaProperties = {
+    segments: {
+      type: "ARRAY",
+      items: {
+        type: "OBJECT",
+        properties: {
+          speaker: { type: "STRING", enum: speakerNames },
+          text: { type: "STRING" },
+        },
+        required: ["speaker", "text"],
+      },
+    },
+  };
+  const schemaRequired = ["segments"];
+  if (!character.noScoring) {
+    schemaProperties.confidenceDelta = { type: "INTEGER" };
+    schemaRequired.push("confidenceDelta");
+  }
+
   const generationConfig = {
     systemInstruction: buildSystemInstruction(stakeholder, projectState),
     // Gemini's newer models can spend several hundred tokens on internal
@@ -432,25 +515,13 @@ app.post("/api/chat", async (req, res) => {
     // Structured output so confidence tracks the character's actual in-world
     // reaction to the player's message, not a crude proxy like text length.
     // `segments` supports a second speaker (e.g. David's colleague Satish)
-    // chiming in within the same turn.
+    // chiming in within the same turn. `confidenceDelta` is omitted
+    // entirely for qualitative-only characters (e.g. Ben).
     responseMimeType: "application/json",
     responseSchema: {
       type: "OBJECT",
-      properties: {
-        segments: {
-          type: "ARRAY",
-          items: {
-            type: "OBJECT",
-            properties: {
-              speaker: { type: "STRING", enum: speakerNames },
-              text: { type: "STRING" },
-            },
-            required: ["speaker", "text"],
-          },
-        },
-        confidenceDelta: { type: "INTEGER" },
-      },
-      required: ["segments", "confidenceDelta"],
+      properties: schemaProperties,
+      required: schemaRequired,
     },
   };
 
@@ -515,9 +586,13 @@ app.post("/api/chat", async (req, res) => {
       sendEvent({ ok: false, fallback: true, error: "Empty reply from Gemini" });
       return res.end();
     }
-    const confidenceDelta = Math.max(-15, Math.min(25, Math.round(Number(parsed.confidenceDelta) || 0)));
 
-    sendEvent({ ok: true, segments, confidenceDelta });
+    const responsePayload = { ok: true, segments };
+    if (!character.noScoring) {
+      responsePayload.confidenceDelta = Math.max(-15, Math.min(25, Math.round(Number(parsed.confidenceDelta) || 0)));
+    }
+
+    sendEvent(responsePayload);
     res.end();
   } catch (err) {
     const status = err && (err.status || err.code);
@@ -558,8 +633,9 @@ app.post("/api/feedback", async (req, res) => {
         strengths: { type: "ARRAY", items: { type: "STRING" } },
         growthAreas: { type: "ARRAY", items: { type: "STRING" } },
         nextLevelFocus: { type: "STRING" },
+        psychologicalSafetyNotes: { type: "STRING" },
       },
-      required: ["level", "summary", "strengths", "growthAreas", "nextLevelFocus"],
+      required: ["level", "summary", "strengths", "growthAreas", "nextLevelFocus", "psychologicalSafetyNotes"],
     },
   };
 
@@ -600,6 +676,7 @@ app.post("/api/feedback", async (req, res) => {
       strengths: Array.isArray(parsed.strengths) ? parsed.strengths.map(String) : [],
       growthAreas: Array.isArray(parsed.growthAreas) ? parsed.growthAreas.map(String) : [],
       nextLevelFocus: String(parsed.nextLevelFocus || ""),
+      psychologicalSafetyNotes: String(parsed.psychologicalSafetyNotes || ""),
     });
   } catch (err) {
     console.error("[feedback] Gemini request failed:", err && err.message ? err.message : err);

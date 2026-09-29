@@ -130,6 +130,14 @@
         <p class="motivation"><strong>Motivation:</strong> Needs UAT to not add to her team's workload during month-end close — or she'll push back hard on timelines.</p>
       </div>
 
+      <div class="stakeholder-card stakeholder-card-support">
+        <div class="avatar avatar-4">BC</div>
+        <h3>Ben Carter</h3>
+        <div class="role">Junior Developer</div>
+        <p class="personality"><strong>Personality:</strong> Earnest and hardworking, but currently overwhelmed and worried about looking incompetent.</p>
+        <p class="motivation"><strong>Note:</strong> This is a supportive check-in, not a client meeting — there's no score, no way to "win" or "lose" it. Ben just needs to be heard.</p>
+      </div>
+
     </div>
 
     <div class="nav-buttons">
@@ -159,6 +167,7 @@
             <button class="switch-btn active" data-stakeholder="0">JM</button>
             <button class="switch-btn" data-stakeholder="1">DK</button>
             <button class="switch-btn" data-stakeholder="2">PA</button>
+            <button class="switch-btn" data-stakeholder="3">BC</button>
           </div>
         </div>
 
@@ -181,9 +190,9 @@
           <div class="status-value">Discovery — Week 2 of 20</div>
         </div>
 
-        <div class="status-block">
+        <div class="status-block" id="confidence-block">
           <div class="status-label" id="confidence-label">Client Confidence — Jenny Mensah</div>
-          <div class="meter"><div class="meter-fill" id="meter-confidence" style="width:50%"></div></div>
+          <div class="meter" id="confidence-meter-wrap"><div class="meter-fill" id="meter-confidence" style="width:50%"></div></div>
           <div class="meter-caption" id="confidence-caption">50% — Neutral</div>
         </div>
 
@@ -261,6 +270,11 @@
         <div class="card card-wide">
           <h2>To Reach the Next Level</h2>
           <p id="feedback-next-level" class="feedback-next-level"></p>
+        </div>
+        <div class="card card-wide feedback-support-card">
+          <h2>Supporting Ben (Psychological Safety)</h2>
+          <p class="feedback-support-subtitle">Qualitative only — this isn't scored and has no bearing on your assessed level.</p>
+          <p id="feedback-support-notes" class="feedback-next-level"></p>
         </div>
       </div>
     </div>

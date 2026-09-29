@@ -94,6 +94,26 @@ const stakeholders = [
     winLine: "This is exactly the kind of clarity I needed. I'm on board.",
     loseLine: "I can't keep going around in circles like this. I need to step back from this conversation.",
     startConfidence: 65
+  },
+  {
+    key: "ben",
+    initials: "BC",
+    name: "Ben Carter",
+    role: "Junior Developer",
+    avatarClass: "avatar-4",
+    // No scoring for this conversation — no confidence bar, no win/loss, no
+    // hard fail. It's a supportive check-in, assessed qualitatively only.
+    noScoring: true,
+    opener:
+      "Hey — have you got a minute? I don't really know who else to ask about this... I've been " +
+      "staring at the Databricks notebooks for two days and I still don't feel like I understand " +
+      "what I'm doing. I don't want to let the team down but I'm honestly a bit overwhelmed.",
+    replies: [
+      "Yeah... thanks, that actually helps a bit.",
+      "I guess I just didn't want to look like I couldn't handle it.",
+      "Okay. I think I can try that.",
+      "Thanks for listening — I mean it."
+    ]
   }
 ];
 
@@ -248,11 +268,16 @@ document.getElementById("player-input").addEventListener("keydown", (e) => {
 });
 
 async function sendResponse() {
-  if (state.roundStatus === "gameover") return; // whole round already over
-
   const idx = state.activeStakeholder;
   const s = stakeholders[idx];
-  if (s.status !== "active") return; // conversation already concluded — composer is disabled anyway
+
+  // Ben's check-in is independent of the scored round — it stays open even
+  // after a game-over on the client stakeholders, since it was never part
+  // of that pass/fail engagement in the first place.
+  if (!s.noScoring) {
+    if (state.roundStatus === "gameover") return; // whole round already over
+    if (s.status !== "active") return; // conversation already concluded — composer is disabled anyway
+  }
 
   const input = document.getElementById("player-input");
   const text = input.value.trim();
@@ -260,9 +285,17 @@ async function sendResponse() {
 
   appendMessage(idx, text, "user");
   input.value = "";
-  s.messageCount++;
 
   logAction(`Responded to ${s.name}`);
+
+  // Ben's conversation is a qualitative, unscored check-in — no insult
+  // detection, no confidence, no win/loss. Just get his reply and stop.
+  if (s.noScoring) {
+    await getReplyAndDelta(text, idx);
+    return;
+  }
+
+  s.messageCount++;
 
   if (isOutrageous(text)) {
     applyConfidenceDelta(idx, -s.confidence); // straight to zero
@@ -444,10 +477,12 @@ function concludeConversation(idx, outcome) {
   checkRoundComplete();
 }
 
-// The round is complete once every stakeholder has been won, or the round
-// has been ended early by a loss (which cascades to "lost" for everyone).
+// The round is complete once every SCORED stakeholder has been won, or the
+// round has been ended early by a loss (which cascades to "lost" for all
+// scored stakeholders). Ben's unscored check-in doesn't factor in either way.
 function checkRoundComplete() {
-  const complete = state.roundStatus === "gameover" || stakeholders.every((s) => s.status === "won");
+  const scored = stakeholders.filter((s) => !s.noScoring);
+  const complete = state.roundStatus === "gameover" || scored.every((s) => s.status === "won");
   document.getElementById("btn-view-feedback").hidden = !complete;
 }
 
@@ -480,6 +515,17 @@ function captionForStakeholder(s) {
 
 function updateConfidenceMeter() {
   const s = stakeholders[state.activeStakeholder];
+  const block = document.getElementById("confidence-block");
+
+  if (s.noScoring) {
+    block.classList.add("confidence-qualitative");
+    document.getElementById("confidence-label").textContent = `Conversation with ${s.name}`;
+    document.getElementById("confidence-caption").textContent =
+      "No score here — this is a supportive check-in, assessed qualitatively at the end.";
+    return;
+  }
+
+  block.classList.remove("confidence-qualitative");
   document.getElementById("confidence-label").textContent = `Client Confidence — ${s.name}`;
   document.getElementById("meter-confidence").style.width = s.confidence + "%";
   document.getElementById("confidence-caption").textContent = `${s.confidence}% — ${captionForStakeholder(s)}`;
@@ -490,6 +536,16 @@ function updateComposerAndBanner() {
   const input = document.getElementById("player-input");
   const sendBtn = document.getElementById("btn-send");
   const banner = document.getElementById("conversation-banner");
+
+  // Ben's conversation never locks and never shows a banner — it's not
+  // part of the pass/fail round.
+  if (s.noScoring) {
+    input.disabled = false;
+    sendBtn.disabled = false;
+    banner.hidden = true;
+    banner.className = "conversation-banner";
+    return;
+  }
 
   const concluded = s.status !== "active";
   input.disabled = concluded;
@@ -561,8 +617,16 @@ function restartSimulation() {
 
 function buildSessionSummary() {
   const sections = stakeholders.map((s) => {
-    const outcome = s.status === "won" ? "WON" : s.status === "lost" ? "LOST" : "INCOMPLETE";
     const lines = s.transcript.map((m) => `${m.role === "assistant" ? (m.speaker || s.name) : "Consultant"}: ${m.text}`);
+
+    if (s.noScoring) {
+      return (
+        `--- Qualitative check-in with ${s.name} (${s.role}) — NOT SCORED, no outcome ---\n` +
+        lines.join("\n")
+      );
+    }
+
+    const outcome = s.status === "won" ? "WON" : s.status === "lost" ? "LOST" : "INCOMPLETE";
     return (
       `--- Conversation with ${s.name} (${s.role}) — Outcome: ${outcome}, Final confidence: ${s.confidence}% ---\n` +
       lines.join("\n")
@@ -595,6 +659,7 @@ async function loadFeedback() {
     document.getElementById("feedback-level").textContent = data.level;
     document.getElementById("feedback-summary").textContent = data.summary;
     document.getElementById("feedback-next-level").textContent = data.nextLevelFocus;
+    document.getElementById("feedback-support-notes").textContent = data.psychologicalSafetyNotes;
 
     const strengthsList = document.getElementById("feedback-strengths");
     strengthsList.innerHTML = "";
