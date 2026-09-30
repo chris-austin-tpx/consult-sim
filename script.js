@@ -1130,6 +1130,13 @@ function renderBannerReview(s) {
   if (s.review) {
     notesEl.textContent = s.review.headline ? `“${s.review.headline}” — ${s.review.notes}` : s.review.notes;
 
+    if (s.review.resourcesHowTheyFit) {
+      const fitEl = document.createElement("p");
+      fitEl.className = "banner-resources-fit";
+      fitEl.textContent = s.review.resourcesHowTheyFit;
+      resourcesEl.appendChild(fitEl);
+    }
+
     (s.review.resources || []).forEach((resource) => {
       const link = document.createElement("a");
       link.className = "banner-resource-link";
@@ -1318,7 +1325,8 @@ async function requestConversationReview(idx, outcome) {
       notes: data.notes,
       // Real objects from the server's fixed, hand-verified catalog — see
       // LEARNING_RESOURCES in server.js. Never raw model output.
-      resources: Array.isArray(data.relatedResources) ? data.relatedResources : []
+      resources: Array.isArray(data.relatedResources) ? data.relatedResources : [],
+      resourcesHowTheyFit: typeof data.resourcesHowTheyFit === "string" ? data.resourcesHowTheyFit : "",
     };
   } catch (err) {
     console.warn(`Conversation review unavailable for ${s.name}:`, err.message || err);

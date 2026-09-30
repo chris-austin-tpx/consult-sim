@@ -432,6 +432,14 @@ ${Object.entries(LEARNING_RESOURCES)
 
 You must use these exact ids and nothing else — never invent a new id, a
 title, or a URL of your own.
+
+IF you selected two or more resources above, ALSO write resourcesHowTheyFit:
+1-2 sentences explaining how those specific pieces generally combine toward
+the underlying technical goal (e.g. how a storage format, the cloud storage
+beneath it, and an access-control layer stack together into one working
+platform). Describe the relationship between the concepts only — do not
+introduce any new facts, tools, or resources beyond the ones you selected.
+If you selected fewer than two resources, leave resourcesHowTheyFit empty.
 `.trim();
 }
 
@@ -718,8 +726,9 @@ app.post("/api/conversation-review", async (req, res) => {
           type: "ARRAY",
           items: { type: "STRING", enum: Object.keys(LEARNING_RESOURCES) },
         },
+        resourcesHowTheyFit: { type: "STRING" },
       },
-      required: ["headline", "notes", "relatedResources"],
+      required: ["headline", "notes", "relatedResources", "resourcesHowTheyFit"],
     },
   };
 
@@ -762,6 +771,9 @@ app.post("/api/conversation-review", async (req, res) => {
       headline: String(parsed.headline || ""),
       notes: String(parsed.notes || ""),
       relatedResources,
+      // Only meaningful with 2+ resources — drop it otherwise even if the
+      // model returned something anyway.
+      resourcesHowTheyFit: relatedResources.length >= 2 ? String(parsed.resourcesHowTheyFit || "") : "",
     });
   } catch (err) {
     console.error("[conversation-review] Gemini request failed:", err && err.message ? err.message : err);
