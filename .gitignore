@@ -18,3 +18,10 @@ Progression Framework*
 *.xlsx
 *.xls
 *.pdf
+
+# Scenario authoring inputs/outputs — employee stories may describe real
+# engagements, and drafts haven't been reviewed yet. Only the template and
+# reviewed scenarios in scenarios/*.json are committed.
+scenarios/stories/*
+!scenarios/stories/TEMPLATE.md
+scenarios/drafts/

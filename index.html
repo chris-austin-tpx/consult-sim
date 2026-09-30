@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ConsultSim — Project Phoenix</title>
+<title>ConsultSim</title>
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -22,8 +22,26 @@
         are waiting to hear from you. How you communicate, prioritise and navigate pressure
         will determine whether this engagement succeeds.
       </p>
+      <p class="welcome-copy">
+        Start with a gentle kickoff, then take on harder situations: a project that's slipping,
+        a deadline that suddenly moves, a client who's already lost patience.
+      </p>
       <button class="btn btn-primary" id="btn-start">Begin Engagement</button>
       <button class="btn btn-secondary welcome-secondary-btn" id="btn-view-progress">View My Progress</button>
+    </div>
+  </section>
+
+  <!-- SCREEN: CHOOSE A SCENARIO -->
+  <section id="screen-levels" class="screen">
+    <div class="page-header">
+      <div class="logo-small">ConsultSim</div>
+      <div class="step-indicator">Choose a Scenario</div>
+    </div>
+
+    <div id="level-list" class="level-grid"></div>
+
+    <div class="nav-buttons">
+      <button class="btn btn-secondary" id="btn-levels-back">Back</button>
     </div>
   </section>
 
@@ -48,60 +66,27 @@
       <div class="step-indicator">Step 1 of 3 — Project Briefing</div>
     </div>
 
+    <div class="scenario-heading">
+      <span class="scenario-stars" id="briefing-stars"></span>
+      <h2 id="briefing-title"></h2>
+      <p id="briefing-summary"></p>
+    </div>
+
     <div class="content-grid">
       <div class="card">
         <h2>Client Objectives</h2>
-        <ul class="bullet-list">
-          <li>Migrate the client's legacy on-premise Teradata data warehouse to Azure Databricks, adopting a modern lakehouse architecture.</li>
-          <li>Consolidate 14 disparate reporting systems into a single governed analytics layer.</li>
-          <li>Reduce month-end financial close reporting time from 9 days to 3 days.</li>
-          <li>Establish a foundation for future AI/ML use cases across the business.</li>
-        </ul>
+        <ul class="bullet-list" id="briefing-objectives"></ul>
       </div>
 
-      <div class="card">
+      <div class="card" id="briefing-timeline-card">
         <h2>Timeline</h2>
-        <div class="timeline">
-          <div class="timeline-item">
-            <span class="timeline-date">Weeks 1–3</span>
-            <span class="timeline-desc">Discovery &amp; current-state assessment</span>
-          </div>
-          <div class="timeline-item">
-            <span class="timeline-date">Weeks 4–10</span>
-            <span class="timeline-desc">Platform build &amp; pilot migration (Finance domain)</span>
-          </div>
-          <div class="timeline-item">
-            <span class="timeline-date">Weeks 11–18</span>
-            <span class="timeline-desc">Full data migration &amp; parallel run</span>
-          </div>
-          <div class="timeline-item">
-            <span class="timeline-date">Weeks 19–20</span>
-            <span class="timeline-desc">Cutover &amp; legacy decommission</span>
-          </div>
-        </div>
-        <p class="deadline-note">⚠ Go-live is fixed to align with the client's new financial year — <strong>20 weeks</strong>, non-negotiable.</p>
+        <div class="timeline" id="briefing-timeline"></div>
+        <p class="deadline-note" id="briefing-deadline"></p>
       </div>
 
-      <div class="card card-wide">
+      <div class="card card-wide" id="briefing-risks-card">
         <h2>Key Risks</h2>
-        <div class="risk-grid">
-          <div class="risk-item risk-high">
-            <span class="risk-label">High</span>
-            <p>Finance team has limited capacity to support UAT alongside month-end close cycles.</p>
-          </div>
-          <div class="risk-item risk-high">
-            <span class="risk-label">High</span>
-            <p>Legacy data quality is unknown — early profiling suggests significant duplication in customer records.</p>
-          </div>
-          <div class="risk-item risk-medium">
-            <span class="risk-label">Medium</span>
-            <p>Client's internal IT team has expressed concern about losing control of infrastructure decisions.</p>
-          </div>
-          <div class="risk-item risk-medium">
-            <span class="risk-label">Medium</span>
-            <p>Budget was set before scope included the 14-system consolidation — contingency is thin.</p>
-          </div>
-        </div>
+        <div class="risk-grid" id="briefing-risks"></div>
       </div>
     </div>
 
@@ -118,42 +103,7 @@
       <div class="step-indicator">Step 2 of 3 — Key Stakeholders</div>
     </div>
 
-    <div class="stakeholder-grid">
-
-      <div class="stakeholder-card">
-        <div class="avatar avatar-1">JM</div>
-        <h3>Jenny Mensah</h3>
-        <div class="role">Chief Financial Officer</div>
-        <p class="personality"><strong>Personality:</strong> Direct, numbers-driven, impatient with vague answers. Values precision and accountability.</p>
-        <p class="motivation"><strong>Motivation:</strong> Needs month-end close fixed before the next board cycle. Her reputation is tied to this project's ROI.</p>
-      </div>
-
-      <div class="stakeholder-card">
-        <div class="avatar avatar-2">DK</div>
-        <h3>David Kowalski</h3>
-        <div class="role">Head of IT Infrastructure</div>
-        <p class="personality"><strong>Personality:</strong> Cautious, protective of his team, skeptical of external consultants "telling him how to run his systems."</p>
-        <p class="motivation"><strong>Motivation:</strong> Wants to retain operational control and avoid being blamed if the migration causes outages.</p>
-        <p class="motivation"><strong>Note:</strong> David will bring his senior cloud engineer, Satish Patel, into your conversation — expect some technical questions about Azure Databricks.</p>
-      </div>
-
-      <div class="stakeholder-card">
-        <div class="avatar avatar-3">PA</div>
-        <h3>Priya Anand</h3>
-        <div class="role">Finance Operations Manager</div>
-        <p class="personality"><strong>Personality:</strong> Pragmatic, overworked, genuinely wants the project to succeed but has little spare time to help.</p>
-        <p class="motivation"><strong>Motivation:</strong> Needs UAT to not add to her team's workload during month-end close — or she'll push back hard on timelines.</p>
-      </div>
-
-      <div class="stakeholder-card stakeholder-card-support">
-        <div class="avatar avatar-4">BC</div>
-        <h3>Ben Carter</h3>
-        <div class="role">Junior Developer</div>
-        <p class="personality"><strong>Personality:</strong> Earnest and hardworking, but currently overwhelmed and worried about looking incompetent.</p>
-        <p class="motivation"><strong>Note:</strong> This is a supportive check-in, not a client meeting — there's no score, no way to "win" or "lose" it. Ben just needs to be heard.</p>
-      </div>
-
-    </div>
+    <div class="stakeholder-grid" id="stakeholder-grid"></div>
 
     <div class="nav-buttons">
       <button class="btn btn-secondary" id="btn-back-briefing">Back</button>
@@ -173,18 +123,13 @@
       <!-- Conversation panel -->
       <div class="conversation-panel">
         <div class="conversation-header">
-          <div class="avatar avatar-1 avatar-sm" id="active-avatar">JM</div>
+          <div class="avatar avatar-sm" id="active-avatar"></div>
           <div>
-            <div class="active-name" id="active-name">Jenny Mensah</div>
-            <div class="active-role" id="active-role">Chief Financial Officer</div>
+            <div class="active-name" id="active-name"></div>
+            <div class="active-role" id="active-role"></div>
           </div>
           <div class="response-timer" id="response-timer" hidden></div>
-          <div class="stakeholder-switcher">
-            <button class="switch-btn active" data-stakeholder="0">JM</button>
-            <button class="switch-btn" data-stakeholder="1">DK</button>
-            <button class="switch-btn" data-stakeholder="2">PA</button>
-            <button class="switch-btn" data-stakeholder="3">BC</button>
-          </div>
+          <div class="stakeholder-switcher" id="stakeholder-switcher"></div>
         </div>
 
         <div class="messages" id="messages"></div>
@@ -208,37 +153,28 @@
 
         <div class="status-block">
           <div class="status-label">Phase</div>
-          <div class="status-value">Discovery — Week 2 of 20</div>
+          <div class="status-value" id="status-phase"></div>
         </div>
 
         <div class="status-block" id="confidence-block">
-          <div class="status-label" id="confidence-label">Client Confidence — Jenny Mensah</div>
-          <div class="meter" id="confidence-meter-wrap"><div class="meter-fill" id="meter-confidence" style="width:50%"></div></div>
-          <div class="meter-caption" id="confidence-caption">50% — Neutral</div>
+          <div class="status-label" id="confidence-label"></div>
+          <div class="meter" id="confidence-meter-wrap"><div class="meter-fill" id="meter-confidence"></div></div>
+          <div class="meter-caption" id="confidence-caption"></div>
         </div>
 
         <div class="status-block">
           <div class="status-label">Stakeholder Sentiment</div>
-          <div class="sentiment-row">
-            <span class="sentiment-name">Jenny Mensah</span>
-            <span class="sentiment-tag sentiment-neutral">Neutral</span>
-          </div>
-          <div class="sentiment-row">
-            <span class="sentiment-name">David Kowalski</span>
-            <span class="sentiment-tag sentiment-wary">Wary</span>
-          </div>
-          <div class="sentiment-row">
-            <span class="sentiment-name">Priya Anand</span>
-            <span class="sentiment-tag sentiment-positive">Supportive</span>
-          </div>
+          <div id="sentiment-rows"></div>
         </div>
 
-        <div class="status-block">
+        <div class="status-block" id="status-events-block" hidden>
+          <div class="status-label">Latest Developments</div>
+          <ul class="status-risk-list status-event-list" id="status-events"></ul>
+        </div>
+
+        <div class="status-block" id="status-risks-block">
           <div class="status-label">Open Risks</div>
-          <ul class="status-risk-list">
-            <li>Finance UAT capacity during close</li>
-            <li>Unverified data quality in customer records</li>
-          </ul>
+          <ul class="status-risk-list" id="status-risks"></ul>
         </div>
 
         <div class="status-block">
@@ -255,7 +191,7 @@
       <button class="btn btn-secondary" id="btn-back-stakeholders">Back to Stakeholders</button>
       <div class="nav-buttons-right">
         <button class="btn btn-primary" id="btn-view-feedback" hidden>View Performance Review</button>
-        <button class="btn btn-secondary" id="btn-restart">Restart Simulation</button>
+        <button class="btn btn-secondary" id="btn-restart">Restart Scenario</button>
       </div>
     </div>
   </section>
@@ -292,8 +228,8 @@
           <h2>To Reach the Next Level</h2>
           <p id="feedback-next-level" class="feedback-next-level"></p>
         </div>
-        <div class="card card-wide feedback-support-card">
-          <h2>Supporting Ben (Psychological Safety)</h2>
+        <div class="card card-wide feedback-support-card" id="feedback-support-card">
+          <h2 id="feedback-support-heading">Supporting a Colleague (Psychological Safety)</h2>
           <p class="feedback-support-subtitle">Qualitative only — this isn't scored and has no bearing on your assessed level.</p>
           <p id="feedback-support-notes" class="feedback-next-level"></p>
         </div>
@@ -307,7 +243,10 @@
 
     <div class="nav-buttons">
       <button class="btn btn-secondary" id="btn-feedback-back">Back to Simulation</button>
-      <button class="btn btn-secondary" id="btn-feedback-restart">Restart Simulation</button>
+      <div class="nav-buttons-right">
+        <button class="btn btn-secondary" id="btn-feedback-levels">Choose Another Scenario</button>
+        <button class="btn btn-secondary" id="btn-feedback-restart">Replay This Scenario</button>
+      </div>
     </div>
   </section>
 

@@ -1,0 +1,74 @@
+{
+  "id": "phoenix-kickoff",
+  "title": "Kickoff",
+  "difficulty": 1,
+  "summary": "Week 2 of a 20-week migration. Nothing has gone wrong yet — meet the stakeholders and earn their trust.",
+  "projectName": "Project Phoenix",
+  "phase": "Discovery — Week 2 of 20",
+  "briefing": {
+    "llm": "The client is migrating a legacy on-premise Teradata data warehouse to\nAzure Databricks, adopting a modern lakehouse architecture. This includes\nconsolidating 14 reporting systems into one governed analytics layer, and\naiming to cut month-end financial close reporting from 9 days to 3 days.\nThe engagement runs 20 fixed weeks, ending to align with the client's new\nfinancial year (non-negotiable go-live date).\n\nKey risks in play: Finance has limited capacity to support UAT during\nmonth-end close cycles; legacy data quality is unverified and may contain\nduplicate customer records; the client's internal IT team is wary of losing\ncontrol of infrastructure decisions and has real technical questions about\nthe target Azure Databricks platform (data storage, multi-tenancy, security);\nbudget contingency is thin because scope grew to include the 14-system\nconsolidation.",
+    "display": {
+      "objectives": [
+        "Migrate the client's legacy on-premise Teradata data warehouse to Azure Databricks, adopting a modern lakehouse architecture.",
+        "Consolidate 14 disparate reporting systems into a single governed analytics layer.",
+        "Reduce month-end financial close reporting time from 9 days to 3 days.",
+        "Establish a foundation for future AI/ML use cases across the business."
+      ],
+      "timeline": [
+        {
+          "when": "Weeks 1–3",
+          "what": "Discovery & current-state assessment"
+        },
+        {
+          "when": "Weeks 4–10",
+          "what": "Platform build & pilot migration (Finance domain)"
+        },
+        {
+          "when": "Weeks 11–18",
+          "what": "Full data migration & parallel run"
+        },
+        {
+          "when": "Weeks 19–20",
+          "what": "Cutover & legacy decommission"
+        }
+      ],
+      "deadlineNote": "⚠ Go-live is fixed to align with the client's new financial year — 20 weeks, non-negotiable.",
+      "risks": [
+        {
+          "level": "high",
+          "text": "Finance team has limited capacity to support UAT alongside month-end close cycles."
+        },
+        {
+          "level": "high",
+          "text": "Legacy data quality is unknown — early profiling suggests significant duplication in customer records."
+        },
+        {
+          "level": "medium",
+          "text": "Client's internal IT team has expressed concern about losing control of infrastructure decisions."
+        },
+        {
+          "level": "medium",
+          "text": "Budget was set before scope included the 14-system consolidation — contingency is thin."
+        }
+      ]
+    }
+  },
+  "openRisks": [
+    "Finance UAT capacity during close",
+    "Unverified data quality in customer records"
+  ],
+  "stakeholders": [
+    {
+      "ref": "jenny"
+    },
+    {
+      "ref": "david"
+    },
+    {
+      "ref": "priya"
+    },
+    {
+      "ref": "ben"
+    }
+  ]
+}

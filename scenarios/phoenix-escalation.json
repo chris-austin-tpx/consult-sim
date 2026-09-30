@@ -1,0 +1,84 @@
+{
+  "id": "phoenix-escalation",
+  "title": "Escalation",
+  "difficulty": 4,
+  "summary": "Week 15. A board report built on the new platform double-counted revenue. David has gone over your head, Jenny had to correct the board, and everyone wants to know whose fault it is.",
+  "projectName": "Project Phoenix",
+  "phase": "Parallel run — Week 15 of 20 (incident open)",
+  "briefing": {
+    "llm": "The client is migrating a legacy on-premise Teradata data warehouse to\nAzure Databricks, adopting a modern lakehouse architecture. This includes\nconsolidating 14 reporting systems into one governed analytics layer, and\naiming to cut month-end financial close reporting from 9 days to 3 days.\nThe engagement runs 20 fixed weeks, ending to align with the client's new\nfinancial year (non-negotiable go-live date).\n\nCURRENT SITUATION: it is week 15, during the parallel run, and there is an\nopen incident. A Finance analyst used a dashboard on the new lakehouse,\nbefore it had been signed off, to prepare the quarterly board pack. Over the\nweekend a customer de-duplication job had failed silently after a schema\nchange in one of the source systems. As a result, about 4,000 customers were\ndouble-counted and quarterly revenue was overstated by 6%. The group auditor\ncaught the error after the board pack had already gone out, and the CFO had\nto send the board a correction.\n\nThe root causes are shared:\n- The de-duplication job had no alerting. The consultant team built it.\n- The schema change was never communicated. The client's own source-system\n  team made it.\n- Finance used a dashboard that hadn't been signed off. This is a process gap.\n\nThe Head of IT has emailed the consultant's engagement partner, saying the\nplatform isn't ready and asking for cutover to be paused. Go-live at week 20\nis still fixed, which leaves five weeks.",
+    "display": {
+      "objectives": [
+        "Migrate the client's legacy on-premise Teradata data warehouse to Azure Databricks, adopting a modern lakehouse architecture.",
+        "Reduce month-end financial close reporting time from 9 days to 3 days.",
+        "Now: take ownership of the incident, agree the controls that stop it happening again, and keep week-20 cutover credible, without scapegoating anyone."
+      ],
+      "timeline": [
+        { "when": "Weeks 1–10", "what": "Discovery, platform build & Finance pilot ✓" },
+        { "when": "Weeks 11–14", "what": "Full data migration ✓" },
+        { "when": "Week 15", "what": "Parallel run: revenue double-count incident" },
+        { "when": "Weeks 16–20", "what": "Parallel run & cutover (IT has asked for a pause)" }
+      ],
+      "deadlineNote": "⚠ Go-live is still fixed at week 20. Five weeks to go, with trust at its lowest point of the engagement.",
+      "risks": [
+        { "level": "high", "text": "Quarterly revenue in the board pack was overstated by 6%, and the CFO had to correct it with the board." },
+        { "level": "high", "text": "The de-duplication job failed silently. There's no alerting on data-quality jobs." },
+        { "level": "high", "text": "The Head of IT has escalated to your engagement partner and asked for cutover to be paused." },
+        { "level": "medium", "text": "A Finance analyst used an unapproved dashboard, and there's a risk she gets made the scapegoat." }
+      ]
+    }
+  },
+  "rules": {
+    "lossGraceMessages": 1,
+    "deltaClamp": { "min": -15, "max": 18 }
+  },
+  "openRisks": [
+    "Open incident: revenue double-count in the board pack",
+    "Cutover pause requested by IT",
+    "No alerting on data-quality jobs"
+  ],
+  "stakeholders": [
+    {
+      "ref": "jenny",
+      "startConfidence": 30,
+      "situation": "You had to send the board a correction after they'd already read overstated revenue figures. It was humiliating, and the audit committee chair called you personally. You don't want grovelling or excuses. You want to know exactly what happened, that it can't happen again, what controls will be in place before cutover, and whether week 20 is still realistic. If the consultant tries to shift the blame onto Finance for using the dashboard early, you'll be furious, even though that's partly true.",
+      "opener": "Yesterday I stood in front of my audit committee chair and explained why the revenue figure in the board pack was wrong by six percent. I don't want an apology. I want to know exactly how this happened, and why I should believe it won't happen again.",
+      "winLine": "Right. That's a clear account, and I can take those controls to the audit committee. Don't make me regret backing you on this.",
+      "loseLine": "I'm sorry, but I've lost confidence in this approach. I'll be discussing the engagement with your partner directly.",
+      "card": { "note": "Had to send the board a correction. Wants facts and controls, not apologies." }
+    },
+    {
+      "ref": "david",
+      "startConfidence": 30,
+      "situation": "You've escalated to the consultant's engagement partner and asked for cutover to be paused. Part of you is relieved to finally have evidence for what you'd been warning about. Part of you knows your own source-system team made the schema change without telling anyone, and you're worried that will come out. You'll only accept a way forward that includes monitoring and alerting your team can see, a rollback plan, and a clear say for your team in the go/no-go decision. If the consultant pins it all on your team, you'll dig in hard.",
+      "opener": "I'll be direct: I've emailed your partner and asked for cutover to be paused. A job failed silently for a whole weekend, and nobody knew until an auditor found it. That's exactly the scenario I've been warning about since week one.",
+      "loseLine": "We're done here. I'll be recommending to Jenny that we pause cutover indefinitely.",
+      "card": { "note": "Has escalated over your head. Satish Patel is in the room, so expect questions about monitoring and data-quality checks." }
+    },
+    {
+      "ref": "priya",
+      "startConfidence": 40,
+      "situation": "Your team spent the weekend reconciling the revenue figures by hand to produce the correction, on top of their normal workload. You also feel exposed, because it was one of your analysts who used the new dashboard for the board pack before it was signed off. She was trying to save time. You're protective of her and worried she'll be made the scapegoat.",
+      "opener": "My team spent all of Saturday and Sunday reconciling revenue by hand to get Jenny the corrected figures. And I know people are asking why my analyst used that dashboard before sign-off. She was trying to help. I need to know she isn't going to be the one who carries this."
+    },
+    {
+      "ref": "ben",
+      "situation": "You were on the support rota the weekend the de-duplication job failed. You saw a warning in the logs on Sunday morning but assumed it was the usual noise, and you didn't flag it. Nobody knows yet. You feel sick about it and you're terrified of what happens if you say something, but you think you have to.",
+      "opener": "Can we talk somewhere? Just us? ...I was on the rota that weekend. I saw something in the logs on Sunday and thought it was the usual noise. I didn't flag it, and I haven't told anyone. I think I have to, but I'm scared of what happens when I do.",
+      "card": { "note": "A supportive check-in, not scored. Ben has something hard to tell you." }
+    }
+  ],
+  "events": [
+    {
+      "id": "auditor-deadline",
+      "afterTurns": 8,
+      "text": "📣 The group auditor has asked for a written incident report and a controls plan by Friday. Without them, they'll recommend delaying go-live.",
+      "briefingAddendum": "The group auditor has just asked for a written incident report and a controls plan by Friday. Without them, they will recommend delaying go-live. Everyone wants to know what the report will say, who owns writing it, and how their own part of the story will be told.",
+      "confidenceShift": -5,
+      "reactions": {
+        "jenny": "You've seen the auditor's note. Friday. I need to know what goes in that report and who's writing it.",
+        "david": "So now the auditor wants a controls plan. I want my team's name on the monitoring section, not just yours."
+      }
+    }
+  ]
+}

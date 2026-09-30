@@ -6,7 +6,9 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "test": "jest"
+    "test": "jest",
+    "test2": "node --test test/*.test.js",
+    "draft-scenario": "node scripts/draft-scenario.js"
   },
   "dependencies": {
     "@google/genai": "^0.3.1",

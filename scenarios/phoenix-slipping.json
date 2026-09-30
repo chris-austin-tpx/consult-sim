@@ -1,0 +1,67 @@
+{
+  "id": "phoenix-slipping",
+  "title": "Slipping Behind",
+  "difficulty": 2,
+  "summary": "Week 12. Data cleansing has wrecked the plan and you're four weeks behind. Jenny heard about it from someone else before she heard it from you.",
+  "projectName": "Project Phoenix",
+  "phase": "Build — Week 12 of 20 (4 weeks behind plan)",
+  "briefing": {
+    "llm": "The client is migrating a legacy on-premise Teradata data warehouse to\nAzure Databricks, adopting a modern lakehouse architecture. This includes\nconsolidating 14 reporting systems into one governed analytics layer, and\naiming to cut month-end financial close reporting from 9 days to 3 days.\nThe engagement runs 20 fixed weeks, ending to align with the client's new\nfinancial year (non-negotiable go-live date).\n\nCURRENT SITUATION — it is now week 12, and the project is four weeks behind\nplan. Legacy customer data turned out to be far worse than early profiling\nsuggested: roughly 18% of customer records are duplicates, against the 3%\nthe plan assumed. The extra de-duplication and reconciliation work has pushed\nthe Finance pilot migration, due to finish in week 10, to about 60% complete.\nThe go-live date has NOT moved. The consultant's status reports have shown\nthe project as \"amber\" for two weeks, but nobody clearly told the client it\nwas four weeks late. The CFO found out from the Finance Operations team in\npassing.\n\nRecovery options people are talking about (none agreed yet): re-sequencing\nwork, adding people (budget contingency is thin), moving some of the 14\nreporting systems to a phase after go-live, or shortening the parallel run\n(risky). UAT was scheduled to avoid month-end close, but a four-week slip\nmoves it onto quarter-end close.",
+    "display": {
+      "objectives": [
+        "Migrate the client's legacy on-premise Teradata data warehouse to Azure Databricks, adopting a modern lakehouse architecture.",
+        "Consolidate 14 disparate reporting systems into a single governed analytics layer.",
+        "Reduce month-end financial close reporting time from 9 days to 3 days.",
+        "Now: recover a four-week slip without putting go-live quality at risk, and rebuild trust in how you report progress."
+      ],
+      "timeline": [
+        { "when": "Weeks 1–3", "what": "Discovery & current-state assessment ✓" },
+        { "when": "Weeks 4–10", "what": "Platform build & Finance pilot: only ~60% complete at week 12" },
+        { "when": "Weeks 11–18", "what": "Full data migration & parallel run (not started)" },
+        { "when": "Weeks 19–20", "what": "Cutover & legacy decommission" }
+      ],
+      "deadlineNote": "⚠ Go-live is still fixed to the new financial year, at week 20. You have 8 weeks left and about 12 weeks of planned work.",
+      "risks": [
+        { "level": "high", "text": "About 18% of customer records are duplicates (the plan assumed 3%). De-duplication is the reason for the slip." },
+        { "level": "high", "text": "A four-week slip moves UAT onto quarter-end close, Finance's busiest fortnight of the year." },
+        { "level": "high", "text": "The client feels the slip was hidden: status reports said amber, but nobody said 'four weeks late'." },
+        { "level": "medium", "text": "People are suggesting a shorter parallel run to make up time, which IT will resist." }
+      ]
+    }
+  },
+  "openRisks": [
+    "Four-week slip against a fixed go-live",
+    "UAT now collides with quarter-end close",
+    "Pressure to shorten the parallel run"
+  ],
+  "stakeholders": [
+    {
+      "ref": "jenny",
+      "startConfidence": 35,
+      "situation": "You found out the project is four weeks behind from Priya's team in a corridor conversation, not from the consultant. The status reports said 'amber', but nobody ever said the words 'four weeks late'. You feel blindsided, and in three weeks you're in front of the board, who will ask about Phoenix. You need three things: an honest account of the slip, a credible recovery plan with real numbers, and confidence that you won't be surprised like this again. Defensive excuses, or blaming the legacy data without owning the communication failure, will make you angrier.",
+      "opener": "I had to hear from Priya's team that we're four weeks behind. Four weeks. Your status reports said amber. I'm in front of the board in three weeks, so tell me straight: what happened, and why am I only hearing this now?",
+      "winLine": "Alright. That's the first straight answer I've had on this. Put the recovery plan in the board pack, and I never want to find out something like this second-hand again.",
+      "loseLine": "I'm not confident you're giving me the whole picture. I'm going to ask your partner to come in and walk me through it.",
+      "card": { "note": "Found out about the slip second-hand. Expect her to start angry." }
+    },
+    {
+      "ref": "david",
+      "startConfidence": 35,
+      "situation": "Your team has been asked, at two days' notice, to stand up extra compute and staging environments for the additional data-cleansing work. Nobody asked about their capacity first. You suspect the consultants will push to cut the parallel run to claw back time, which is exactly the kind of shortcut that causes the outages you'll be blamed for. You want your team consulted before any recovery plan is finalised. You'll resist any plan that shortens or skips the parallel run unless it comes with a solid rollback plan.",
+      "opener": "My team's been spinning up extra environments at two days' notice to support your data cleansing. Nobody asked. And now I hear you're 'exploring options' to recover four weeks. If one of those options is cutting the parallel run, we need to talk about that right now.",
+      "card": { "note": "Worried the recovery plan will cut corners on the parallel run. Satish Patel is in the room again." }
+    },
+    {
+      "ref": "priya",
+      "startConfidence": 45,
+      "situation": "Because of the slip, UAT, which was carefully scheduled to avoid month-end close, now collides with quarter-end close, the busiest period of your year. Your team has also been pulled into manually reconciling duplicate customer records to help with the data cleansing, which was never in the plan. You still want the project to succeed, but you're exhausted. You need the consultant to protect your team's time, not just move dates around on a Gantt chart.",
+      "opener": "I'll be honest, the new dates don't work. If UAT slides four weeks it lands right on quarter-end close, and that's the one fortnight a year my team genuinely can't give you. They're already doing reconciliation work that was never in the plan."
+    },
+    {
+      "ref": "ben",
+      "situation": "You wrote the first version of the customer de-duplication pipeline. You've convinced yourself the four-week slip is your fault, because your matching rules missed so many duplicates. You don't know whether anyone else blames you, and you're scared to ask.",
+      "opener": "Hey... can I ask you something? The dedup pipeline was mine. I keep thinking that if I'd got the matching rules right the first time, we wouldn't be four weeks behind. Does everyone think this is on me?",
+      "card": { "note": "A supportive check-in, not scored. Ben thinks the slip is his fault." }
+    }
+  ]
+}

@@ -15,11 +15,24 @@ Each of the three client conversations tracks a **confidence score** that rises 
 
 Every conversation — scored or not — gets a quick, honest **AI-generated qualitative review** the moment it concludes, citing real moments rather than generic praise. Once all three client conversations are decided (won, or the round ends early on a loss), you also get a **full end-of-round performance review**: level (Junior/Graduate through Principal), strengths, growth areas, and — separately, never affecting the level — qualitative notes on how you supported Ben. Every completed round is saved locally and browsable from the "My Progress" screen.
 
+### Scenarios and difficulty
+
+You choose a **scenario** from the level list before you start. Each one is a JSON file in [`scenarios/`](scenarios/README.md):
+
+- ★ **Kickoff**: the original week-2 game.
+- ★★ **Slipping Behind**: four weeks late, and the client found out second-hand.
+- ★★★ **Moving Goalposts**: the go-live date is pulled forward partway through your conversations.
+- ★★★★ **Escalation**: a data incident reached the board, and IT has gone over your head.
+
+Scenarios get harder through lower starting confidence, hostile situations, **mid-round events**, and tighter rules (win threshold, how much one answer can gain, grace period). New scenarios can be hand-written, or drafted from an employee's anonymised story with `npm run draft-scenario` and then reviewed. See [scenarios/README.md](scenarios/README.md).
+
+Once the round ends (win or lose), you get an **AI-generated performance review** assessing how you communicated, took ownership, and handled pressure and ambiguity — mapped to a five-level progression ladder (Junior/Graduate through Principal) and including specific feedback on what to focus on to reach the next level.
+
 ## Why it's built this way
 
 This project deliberately mixes scripted and AI-generated content:
 
-- The **scenario, stakeholder personalities, and objectives** are fixed, fictional, and hand-written — this keeps the simulation focused and repeatable, and means nothing about a real client or company ever needs to be involved.
+- The **scenarios, stakeholder personalities, and objectives** are curated, fictional data files reviewed by a person — this keeps the simulation focused and repeatable, and means nothing about a real client or company ever needs to be involved.
 - **Stakeholder replies are generated live by Google's Gemini API**, in-character, with full memory of the conversation so far. This is what makes the "conversation" actually feel like one — stakeholders remember commitments, react to specifics, and push back on vague answers.
 - If Gemini is unavailable (rate limits, an outage, no API key configured), the app **falls back to a small set of scripted replies** per stakeholder, so a demo never fully breaks — it just gets less dynamic.
 - The **performance review rubric** is an original, condensed write-up of general consulting-competency levels (communication, ownership, handling complexity, supporting others, learning & adaptability) — see [Performance review rubric](#performance-review-rubric) below for why it's written the way it is.
@@ -31,13 +44,17 @@ It's intentionally simple: a static frontend and a thin backend that talks to Ge
 ```
 index.html   — screens: welcome, briefing, stakeholders, live simulation, performance review
 styles.css   — all styling
-script.js    — all frontend logic: screen navigation, conversation state, confidence/win-loss
-               tracking, calling the backend, rendering multi-speaker replies (e.g. David + Satish)
-server.js    — Express server: serves the static frontend, proxies conversation turns and the
-               end-of-round review to Gemini, holds the character prompts and scoring rubric
+script.js    — all frontend logic: level select, screen navigation, rendering the chosen scenario,
+               conversation state, confidence/win-loss tracking, scenario events, calling the backend
+server.js    — Express server: serves the static frontend, lists scenarios, proxies conversation
+               turns and reviews to Gemini, builds the character prompts, holds the scoring rubric
+lib/         — scenario loading/validation/merging (scenarios.js) and shared Gemini helpers
+scenarios/   — one JSON file per level, plus the reusable cast in characters.json
+scripts/     — draft-scenario.js: turns an anonymised story into a draft scenario
+test/        — node:test checks that every scenario is valid and hidden details stay server-side
 ```
 
-There's no database and no user accounts — all state lives in the browser tab for the duration of a session. Refreshing the page resets everything.
+There's no database and no user accounts. A round's state lives in the browser tab, so refreshing mid-round resets it. Completed attempts are saved to a local, gitignored `.data/history.json`, which feeds the My Progress screen and each level's best result.
 
 ### How a conversation turn works
 

@@ -1,0 +1,75 @@
+{
+  "id": "phoenix-deadline-cut",
+  "title": "Moving Goalposts",
+  "difficulty": 3,
+  "summary": "Week 6. The pilot is on track and everyone is cautiously happy, until the steering committee moves the goalposts partway through your conversations.",
+  "projectName": "Project Phoenix",
+  "phase": "Build — Week 6 of 20",
+  "briefing": {
+    "llm": "The client is migrating a legacy on-premise Teradata data warehouse to\nAzure Databricks, adopting a modern lakehouse architecture. This includes\nconsolidating 14 reporting systems into one governed analytics layer, and\naiming to cut month-end financial close reporting from 9 days to 3 days.\nThe engagement runs 20 fixed weeks, ending to align with the client's new\nfinancial year (non-negotiable go-live date).\n\nCURRENT SITUATION: it is week 6 and the project is on track. The platform\nbuild is going well and the Finance pilot migration has started. Profiling\nconfirmed some duplicate customer records, and an agreed, scheduled cleansing\nplan is in place to deal with them. Relationships with the client are\ncautiously positive. Budget contingency is still thin, because scope grew to\ninclude the 14-system consolidation.",
+    "display": {
+      "objectives": [
+        "Migrate the client's legacy on-premise Teradata data warehouse to Azure Databricks, adopting a modern lakehouse architecture.",
+        "Consolidate 14 disparate reporting systems into a single governed analytics layer.",
+        "Reduce month-end financial close reporting time from 9 days to 3 days.",
+        "Keep the project on track, and keep stakeholders on side when things change."
+      ],
+      "timeline": [
+        { "when": "Weeks 1–3", "what": "Discovery & current-state assessment ✓" },
+        { "when": "Weeks 4–10", "what": "Platform build & pilot migration (Finance domain): on track" },
+        { "when": "Weeks 11–18", "what": "Full data migration & parallel run" },
+        { "when": "Weeks 19–20", "what": "Cutover & legacy decommission" }
+      ],
+      "deadlineNote": "⚠ Go-live is fixed to align with the client's new financial year: 20 weeks. For now.",
+      "risks": [
+        { "level": "medium", "text": "Duplicate customer records confirmed. A cleansing plan is agreed and scheduled." },
+        { "level": "medium", "text": "Budget contingency is thin after the 14-system consolidation was added to scope." },
+        { "level": "medium", "text": "Finance UAT capacity during month-end close still needs confirmed dates." },
+        { "level": "low", "text": "IT relationship improving, but David still wants a say in the cutover plan." }
+      ]
+    }
+  },
+  "rules": {
+    "winThreshold": 85
+  },
+  "openRisks": [
+    "Customer data cleansing, scheduled",
+    "Thin budget contingency"
+  ],
+  "stakeholders": [
+    {
+      "ref": "jenny",
+      "startConfidence": 55,
+      "situation": "The project is on track and you're cautiously pleased, but you know how fast that can change. You want the consultant to show they're thinking ahead rather than coasting.",
+      "opener": "The pilot numbers from last week look encouraging. I'd like to keep it that way. Walk me through what could still knock us off track between now and go-live."
+    },
+    {
+      "ref": "david",
+      "startConfidence": 40,
+      "situation": "The build has gone more smoothly than you expected, and Satish rates the consultant team. You're warming up, but you still want to understand the cutover plan and your team's role in it before you relax.",
+      "opener": "Credit where it's due: the platform build has gone smoother than I expected, and Satish says your team's been good to work with. I still want to understand the cutover plan before I relax."
+    },
+    {
+      "ref": "priya",
+      "startConfidence": 65,
+      "situation": "Things feel calmer this month and you're relieved. You'd like to lock down UAT dates now, while there's no crisis, so your team can plan around month-end close.",
+      "opener": "Things feel calmer this month, which I appreciate. I'd just like to lock down the UAT dates now, while there's no crisis, so my team can plan around close."
+    },
+    { "ref": "ben" }
+  ],
+  "events": [
+    {
+      "id": "go-live-moved",
+      "afterTurns": 6,
+      "text": "📣 Steering committee update: the client's parent group has brought its financial year-end forward. Go-live moves from week 20 to week 16. That's four weeks less, with the same scope and no extra budget.",
+      "briefingAddendum": "The steering committee has just announced that the parent group's financial year-end has moved forward, so go-live is now week 16 instead of week 20. That's four weeks less, with the same scope and no extra budget. It isn't the consultant's fault, but everyone now wants to know how they'll respond: what gets re-sequenced, descoped or put at risk, and what it means for you specifically. React to this news according to your own concerns, and judge the consultant on how well they handle it.",
+      "confidenceShift": -10,
+      "reactions": {
+        "jenny": "I've just seen the steering committee note. Sixteen weeks. I need to know today whether month-end close still gets fixed before the board cycle, or what we tell them instead.",
+        "david": "Well. Sixteen weeks. Before anyone suggests it, I'm not cutting the parallel run to make this date work. Let's hear what you're actually proposing.",
+        "priya": "Four weeks less means UAT moves, doesn't it? Please tell me it's not moving into close.",
+        "ben": "Did you see the update? I was already struggling with the old timeline. I don't know how I'm going to keep up now."
+      }
+    }
+  ]
+}

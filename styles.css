@@ -17,6 +17,8 @@
 
 * { box-sizing: border-box; }
 
+[hidden] { display: none !important; }
+
 body {
   margin: 0;
   background: linear-gradient(160deg, #0b1222 0%, #101a33 50%, #0b1222 100%);
@@ -261,6 +263,11 @@ body {
   background: rgba(240,184,75,0.15);
 }
 
+.risk-low .risk-label {
+  color: var(--success);
+  background: rgba(62,207,142,0.15);
+}
+
 .risk-item p {
   margin: 0;
   font-size: 13px;
@@ -454,6 +461,20 @@ body {
   letter-spacing: 0.4px;
   color: var(--accent);
   margin-bottom: 4px;
+}
+
+.message-event {
+  justify-content: center;
+  margin: 6px auto;
+  max-width: 85%;
+  padding: 10px 14px;
+  border: 1px dashed var(--warning);
+  border-radius: 10px;
+  background: rgba(240,184,75,0.08);
+  color: var(--warning);
+  font-size: 13px;
+  line-height: 1.5;
+  text-align: center;
 }
 
 .message-me .message-bubble {
@@ -870,4 +891,78 @@ body {
   .sim-layout { grid-template-columns: 1fr; height: auto; }
   .messages { max-height: 340px; }
   .nav-buttons { flex-wrap: wrap; gap: 12px; }
+}
+
+/* ---------- Scenario (level) selection ---------- */
+.level-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 20px;
+}
+
+.level-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.level-card h3 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.level-stars,
+.scenario-stars {
+  color: var(--warning);
+  letter-spacing: 2px;
+  font-size: 15px;
+}
+
+.level-summary {
+  margin: 4px 0 0;
+  color: var(--text-dim);
+  font-size: 13.5px;
+  line-height: 1.6;
+  flex: 1;
+}
+
+.level-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.level-card .btn {
+  align-self: flex-start;
+  margin-top: 6px;
+}
+
+.scenario-heading {
+  margin-bottom: 20px;
+}
+
+.scenario-heading h2 {
+  margin: 4px 0 6px;
+  font-size: 22px;
+}
+
+.scenario-heading p {
+  margin: 0;
+  color: var(--text-dim);
+  line-height: 1.6;
+}
+
+.attempt-scenario {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.status-event-list li {
+  color: var(--warning);
 }
