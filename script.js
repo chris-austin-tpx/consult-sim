@@ -13,8 +13,15 @@
 // think time — it's paused (deadline cleared) while waiting on Gemini —
 // and runs in the background for every stakeholder at once, not just
 // whichever one is currently on screen.
-const RESPONSE_TIME_LIMIT_MS = 120000;
-const RESPONSE_TIME_URGENT_SECONDS = 20;
+// Per-message response window. No longer fixed: the player sets it on the
+// Stakeholders screen by firing a ball down a line (see the launcher section
+// below and launcher.js). 120s is only the fallback if that never happens.
+let responseTimeLimitMs = 120000;
+// The clock turns red for the last 20s — or the last third, if the player
+// only negotiated themselves a tiny window.
+function responseUrgentSeconds() {
+  return Math.min(20, Math.ceil(responseTimeLimitMs / 1000 / 3));
+}
 const TIMEOUT_CONFIDENCE_PENALTY = -10;
 const TIMEOUT_MOOD_PENALTY = -8;
 
@@ -409,6 +416,149 @@ function removeTypingIndicator() {
   if (el) el.remove();
 }
 
+// --- Response-time launcher (Stakeholders screen) ---
+// Press and hold the plunger, release to fire the ball. Where it stops sets
+// responseTimeLimitMs for the round. The maths lives in launcher.js; this is
+// just input handling and animation. The chosen time sticks across restarts.
+(function initLauncher() {
+  const L = window.Launcher;
+  if (!L) return;
+  const { FULL_CHARGE_MS, MAX_SHOTS, JITTER } = L.LAUNCHER_CONFIG;
+  const POWER_BAR_MAX = 1.5; // the power bar shows up to 150% charge; past 100% is the danger zone
+
+  const plunger = document.getElementById("launcher-plunger");
+  const ball = document.getElementById("launcher-ball");
+  const line = document.querySelector(".launcher-line");
+  const powerFill = document.getElementById("launcher-power-fill");
+  const timeEl = document.getElementById("launcher-time");
+  const zoneEl = document.getElementById("launcher-zone");
+  const quipEl = document.getElementById("launcher-quip");
+  const shotsEl = document.getElementById("launcher-shots");
+  const startBtn = document.getElementById("btn-to-simulation");
+
+  let shotsLeft = MAX_SHOTS;
+  let chargeStart = null;
+  let chargeRaf = null;
+  let flying = false;
+
+  const chargeQuips = [
+    [0.25, "Modest ask…"],
+    [0.6, "Building a business case…"],
+    [0.9, "Ambitious. Procurement is watching."],
+    [1.0, "Right at the limit. Let go. LET GO."],
+    [1.25, "That's scope creep."],
+    [Infinity, "PUT. IT. DOWN."]
+  ];
+
+  function setBall(x, y, rot) {
+    ball.style.transform = `translate(${x}px, ${y}px) rotate(${rot}deg)`;
+  }
+
+  function resetBall() {
+    ball.classList.remove("launcher-ball-gone");
+    setBall(0, 0, 0);
+  }
+
+  function updateShots() {
+    shotsEl.textContent = shotsLeft === 1 ? "1 shot left" : `${shotsLeft} shots left`;
+    if (shotsLeft <= 0) {
+      plunger.disabled = true;
+      shotsEl.textContent = "no shots left";
+    }
+  }
+
+  function chargeTick() {
+    if (chargeStart == null) return;
+    const charge = (performance.now() - chargeStart) / FULL_CHARGE_MS;
+    const shown = Math.min(charge, POWER_BAR_MAX);
+    powerFill.style.width = `${(shown / POWER_BAR_MAX) * 100}%`;
+    powerFill.classList.toggle("launcher-power-danger", charge > 1);
+    plunger.style.setProperty("--charge", Math.min(charge, 1).toFixed(3));
+    plunger.classList.toggle("launcher-plunger-overcharged", charge > 1);
+    quipEl.textContent = chargeQuips.find(([max]) => charge < max)[1];
+    chargeRaf = requestAnimationFrame(chargeTick);
+  }
+
+  function startCharge(e) {
+    if (flying || shotsLeft <= 0 || chargeStart != null) return;
+    if (e && e.preventDefault) e.preventDefault();
+    if (e && e.pointerId != null && plunger.setPointerCapture) plunger.setPointerCapture(e.pointerId);
+    resetBall();
+    chargeStart = performance.now();
+    plunger.classList.add("launcher-plunger-charging");
+    chargeTick();
+  }
+
+  function release() {
+    if (chargeStart == null) return;
+    const holdMs = performance.now() - chargeStart;
+    chargeStart = null;
+    cancelAnimationFrame(chargeRaf);
+    plunger.classList.remove("launcher-plunger-charging", "launcher-plunger-overcharged");
+    plunger.style.setProperty("--charge", "0");
+    fire(holdMs);
+  }
+
+  function fire(holdMs) {
+    const jitter = (Math.random() * 2 - 1) * JITTER;
+    const result = L.launchResult(holdMs, jitter);
+    shotsLeft--;
+    flying = true;
+    quipEl.textContent = "Negotiating…";
+
+    const range = Math.max(0, line.offsetWidth - ball.offsetWidth);
+    // Overshoots keep rolling past the edge, then drop off the cliff.
+    const target = Math.min(result.distance, 1.3) * range;
+    const duration = 450 + 1000 * Math.sqrt(Math.min(result.distance, 1.3));
+    const t0 = performance.now();
+
+    function frame(now) {
+      const t = Math.min(1, (now - t0) / duration);
+      const eased = result.overshot ? t : 1 - Math.pow(1 - t, 3); // ease-out = friction; overshoots don't slow down
+      const x = eased * target;
+      const past = Math.max(0, x - range);
+      const y = past > 0 ? Math.pow(past, 1.6) * 0.6 : 0; // gravity, roughly
+      setBall(x, y, x * 2.2);
+      if (t < 1) {
+        requestAnimationFrame(frame);
+      } else {
+        if (result.overshot) ball.classList.add("launcher-ball-gone");
+        land(result);
+      }
+    }
+    requestAnimationFrame(frame);
+  }
+
+  function land(result) {
+    flying = false;
+    responseTimeLimitMs = result.seconds * 1000;
+    const mm = Math.floor(result.seconds / 60);
+    const ss = result.seconds % 60;
+    timeEl.textContent = `${mm}:${String(ss).padStart(2, "0")}`;
+    zoneEl.textContent = result.zone.label;
+    document.getElementById("launcher-readout").classList.toggle("launcher-readout-bad", result.overshot);
+    updateShots();
+    quipEl.textContent = shotsLeft > 0
+      ? `${result.zone.quip} Happy? Start the simulation, or fire again.`
+      : `${result.zone.quip} That's your rate card now — no more renegotiation.`;
+    startBtn.disabled = false;
+    startBtn.removeAttribute("title");
+  }
+
+  plunger.addEventListener("pointerdown", startCharge);
+  plunger.addEventListener("pointerup", release);
+  plunger.addEventListener("pointercancel", release);
+  plunger.addEventListener("lostpointercapture", release);
+  plunger.addEventListener("contextmenu", (e) => e.preventDefault()); // long-press on touch devices
+  plunger.addEventListener("keydown", (e) => {
+    if ((e.key === " " || e.key === "Enter") && !e.repeat) startCharge(e);
+  });
+  plunger.addEventListener("keyup", (e) => {
+    if (e.key === " " || e.key === "Enter") release();
+  });
+  updateShots();
+})();
+
 // --- Sending a response ---
 document.getElementById("btn-send").addEventListener("click", sendResponse);
 document.getElementById("player-input").addEventListener("keydown", (e) => {
@@ -456,7 +606,7 @@ async function sendResponse() {
     if (typeof moodDelta === "number") {
       s.mood = Math.max(-50, Math.min(50, s.mood + moodDelta));
     }
-    if (s.status === "active") s.deadline = Date.now() + RESPONSE_TIME_LIMIT_MS;
+    if (s.status === "active") s.deadline = Date.now() + responseTimeLimitMs;
     if (idx === state.activeStakeholder) updateResponseTimerDisplay();
     fireDueEvents();
     return;
@@ -484,7 +634,7 @@ async function sendResponse() {
       fireDueEvents();
     }, 500);
   } else {
-    s.deadline = Date.now() + RESPONSE_TIME_LIMIT_MS;
+    s.deadline = Date.now() + responseTimeLimitMs;
     if (idx === state.activeStakeholder) updateResponseTimerDisplay();
     fireDueEvents();
   }
@@ -724,7 +874,7 @@ function startAllTimersIfNeeded() {
   state.timersStarted = true;
   const now = Date.now();
   stakeholders.forEach((s) => {
-    if (s.status === "active") s.deadline = now + RESPONSE_TIME_LIMIT_MS;
+    if (s.status === "active") s.deadline = now + responseTimeLimitMs;
   });
   updateResponseTimerDisplay();
 }
@@ -753,7 +903,7 @@ function handleResponseTimeout(idx) {
   if (s.noScoring) {
     s.mood = Math.max(-50, Math.min(50, s.mood + TIMEOUT_MOOD_PENALTY));
     appendMessage(idx, s.timeoutLine, "assistant");
-    s.deadline = Date.now() + RESPONSE_TIME_LIMIT_MS; // no hard fail — just a fresh window
+    s.deadline = Date.now() + responseTimeLimitMs; // no hard fail — just a fresh window
     if (idx === state.activeStakeholder) updateComposerAndBanner();
     return;
   }
@@ -764,7 +914,7 @@ function handleResponseTimeout(idx) {
   if (pendingEnding) {
     concludeConversation(idx, pendingEnding);
   } else if (s.status === "active") {
-    s.deadline = Date.now() + RESPONSE_TIME_LIMIT_MS;
+    s.deadline = Date.now() + responseTimeLimitMs;
   }
 }
 
@@ -784,7 +934,7 @@ function updateResponseTimerDisplay() {
   const ss = totalSeconds % 60;
   el.textContent = `⏱ ${mm}:${String(ss).padStart(2, "0")}`;
   el.hidden = false;
-  el.classList.toggle("response-timer-urgent", totalSeconds <= RESPONSE_TIME_URGENT_SECONDS);
+  el.classList.toggle("response-timer-urgent", totalSeconds <= responseUrgentSeconds());
 }
 
 function labelForStakeholder(s) {
