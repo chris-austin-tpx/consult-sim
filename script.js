@@ -8,6 +8,16 @@
 const WIN_THRESHOLD = 80;
 const LOSE_THRESHOLD = 30;
 
+// Response-time pressure: the player has this long to reply once a
+// stakeholder has spoken. The clock only runs during the player's own
+// think time — it's paused (deadline cleared) while waiting on Gemini —
+// and runs in the background for every stakeholder at once, not just
+// whichever one is currently on screen.
+const RESPONSE_TIME_LIMIT_MS = 120000;
+const RESPONSE_TIME_URGENT_SECONDS = 20;
+const TIMEOUT_CONFIDENCE_PENALTY = -10;
+const TIMEOUT_MOOD_PENALTY = -8;
+
 // Simple, deliberately blunt detector for outright insults/abuse directed
 // at a stakeholder. Checked locally (no API call) so an obviously
 // outrageous message never even reaches Gemini.
@@ -53,6 +63,7 @@ const stakeholders = [
       "Excuse me? I won't be spoken to like that. This meeting is over — I'll be raising this with your engagement lead.",
     winLine: "You've clearly got a handle on this. I'm satisfied — let's move forward.",
     loseLine: "I don't think this is working. I need to escalate this internally.",
+    timeoutLine: "I don't have time to wait around — if you can't respond promptly, I'll assume this isn't a priority for you.",
     startConfidence: 50
   },
   {
@@ -73,6 +84,7 @@ const stakeholders = [
     insultLine: "That's completely out of line. We're done here.",
     winLine: "Alright, I'm convinced. You've got my team's backing.",
     loseLine: "I'm not comfortable continuing this conversation — I'll be flagging this up.",
+    timeoutLine: "Look, I don't have all day. If you need time to think, let's schedule this properly instead.",
     startConfidence: 35
   },
   {
@@ -93,6 +105,7 @@ const stakeholders = [
     insultLine: "I don't have to put up with that. This conversation is over.",
     winLine: "This is exactly the kind of clarity I needed. I'm on board.",
     loseLine: "I can't keep going around in circles like this. I need to step back from this conversation.",
+    timeoutLine: "I've got month-end close bearing down on me — I can't just sit here waiting. Let's pick this up when you're ready.",
     startConfidence: 65
   },
   {
@@ -113,7 +126,8 @@ const stakeholders = [
       "I guess I just didn't want to look like I couldn't handle it.",
       "Okay. I think I can try that.",
       "Thanks for listening — I mean it."
-    ]
+    ],
+    timeoutLine: "Oh — sorry, did I catch you at a bad time? I can come back later if now's not great."
   }
 ];
 
@@ -127,6 +141,7 @@ function initStakeholderRuntimeState(s) {
   s.messageCount = 0; // player messages sent — used for the grace period below
   s.mood = 0; // noScoring only: silent running emotional trend, never displayed live
   s.review = null; // { headline, notes } once this conversation's quick review has loaded
+  s.deadline = null; // timestamp the player must respond by, or null while not their turn to reply
 }
 
 // A stakeholder can't be lost on confidence alone until the player has had
@@ -142,7 +157,8 @@ const state = {
   activeStakeholder: 0,
   actionCount: 0,
   roundStatus: "active", // "active" | "gameover" — losing ANY stakeholder ends the whole round
-  gameOverStakeholder: null
+  gameOverStakeholder: null,
+  timersStarted: false // becomes true once the player first enters the simulation screen
 };
 
 function show(screenId) {
@@ -155,7 +171,10 @@ document.getElementById("btn-start").addEventListener("click", () => show("scree
 document.getElementById("btn-back-welcome").addEventListener("click", () => show("screen-welcome"));
 document.getElementById("btn-to-stakeholders").addEventListener("click", () => show("screen-stakeholders"));
 document.getElementById("btn-back-briefing").addEventListener("click", () => show("screen-briefing"));
-document.getElementById("btn-to-simulation").addEventListener("click", () => show("screen-simulation"));
+document.getElementById("btn-to-simulation").addEventListener("click", () => {
+  show("screen-simulation");
+  startAllTimersIfNeeded();
+});
 document.getElementById("btn-back-stakeholders").addEventListener("click", () => show("screen-stakeholders"));
 document.getElementById("btn-restart").addEventListener("click", restartSimulation);
 document.getElementById("btn-view-feedback").addEventListener("click", () => {
@@ -178,8 +197,10 @@ function endCheckin() {
   if (!s.noScoring || s.status !== "active") return;
 
   s.status = "closed";
+  s.deadline = null;
   logAction(`Ended check-in with ${s.name}`);
   updateComposerAndBanner();
+  updateResponseTimerDisplay();
   requestConversationReview(idx, "closed");
 }
 
@@ -208,6 +229,7 @@ function renderActiveStakeholder() {
 
   updateConfidenceMeter();
   updateComposerAndBanner();
+  updateResponseTimerDisplay();
 }
 
 // `speaker` is who's actually talking (e.g. "Satish Patel"); `primaryName` is
@@ -310,6 +332,11 @@ async function sendResponse() {
   appendMessage(idx, text, "user");
   input.value = "";
 
+  // The player just replied — pause their clock while we wait on a
+  // response, then restart it once it's their turn again (below).
+  s.deadline = null;
+  if (idx === state.activeStakeholder) updateResponseTimerDisplay();
+
   logAction(`Responded to ${s.name}`);
 
   // Ben's conversation is a qualitative, unscored check-in — no insult
@@ -320,6 +347,8 @@ async function sendResponse() {
     if (typeof moodDelta === "number") {
       s.mood = Math.max(-50, Math.min(50, s.mood + moodDelta));
     }
+    if (s.status === "active") s.deadline = Date.now() + RESPONSE_TIME_LIMIT_MS;
+    if (idx === state.activeStakeholder) updateResponseTimerDisplay();
     return;
   }
 
@@ -343,6 +372,9 @@ async function sendResponse() {
       appendMessage(idx, pendingEnding === "won" ? s.winLine : s.loseLine, "assistant");
       concludeConversation(idx, pendingEnding);
     }, 500);
+  } else {
+    s.deadline = Date.now() + RESPONSE_TIME_LIMIT_MS;
+    if (idx === state.activeStakeholder) updateResponseTimerDisplay();
   }
 }
 
@@ -487,16 +519,20 @@ function applyConfidenceDelta(idx, delta) {
 function concludeConversation(idx, outcome) {
   const s = stakeholders[idx];
   s.status = outcome; // "won" | "lost"
+  s.deadline = null;
   updateSentimentRow(idx);
   logAction(`Conversation with ${s.name} ended — ${outcome === "won" ? "Won" : "Lost"}`);
 
   if (outcome === "lost") {
-    // Losing any one stakeholder ends the whole round — game over.
+    // Losing any one SCORED stakeholder ends the whole round — game over.
+    // Ben's check-in is exempt: it was never part of the pass/fail
+    // engagement, so it isn't dragged into the cascade.
     state.roundStatus = "gameover";
     state.gameOverStakeholder = s.name;
     stakeholders.forEach((other, otherIdx) => {
-      if (otherIdx !== idx && other.status === "active") {
+      if (otherIdx !== idx && !other.noScoring && other.status === "active") {
         other.status = "lost";
+        other.deadline = null;
         updateSentimentRow(otherIdx);
       }
     });
@@ -516,6 +552,82 @@ function checkRoundComplete() {
   const scored = stakeholders.filter((s) => !s.noScoring);
   const complete = state.roundStatus === "gameover" || scored.every((s) => s.status === "won");
   document.getElementById("btn-view-feedback").hidden = !complete;
+}
+
+// ---------------------------------------------------------------------------
+// Response-time pressure
+// ---------------------------------------------------------------------------
+
+// Idempotent — safe to call every time the player enters the simulation
+// screen. Only actually starts the clocks once per round, so navigating
+// back to Stakeholders and forward again mid-round can't be used to farm
+// free thinking time.
+function startAllTimersIfNeeded() {
+  if (state.timersStarted) return;
+  state.timersStarted = true;
+  const now = Date.now();
+  stakeholders.forEach((s) => {
+    if (s.status === "active") s.deadline = now + RESPONSE_TIME_LIMIT_MS;
+  });
+  updateResponseTimerDisplay();
+}
+
+// Runs every second in the background for ALL FOUR conversations at once,
+// not just whichever one is on screen — switching away doesn't stop anyone's
+// clock. Each stakeholder's own deadline is an absolute timestamp, so this
+// is accurate regardless of how often (or rarely) it's checked.
+function tickTimers() {
+  if (!state.timersStarted) return;
+  const now = Date.now();
+  stakeholders.forEach((s, idx) => {
+    if (s.status !== "active" || s.deadline == null) return;
+    if (now >= s.deadline) handleResponseTimeout(idx);
+  });
+  updateResponseTimerDisplay();
+}
+
+setInterval(tickTimers, 1000);
+
+function handleResponseTimeout(idx) {
+  const s = stakeholders[idx];
+  s.deadline = null;
+  logAction(`${s.name} grew impatient waiting for a response`);
+
+  if (s.noScoring) {
+    s.mood = Math.max(-50, Math.min(50, s.mood + TIMEOUT_MOOD_PENALTY));
+    appendMessage(idx, s.timeoutLine, "assistant");
+    s.deadline = Date.now() + RESPONSE_TIME_LIMIT_MS; // no hard fail — just a fresh window
+    if (idx === state.activeStakeholder) updateComposerAndBanner();
+    return;
+  }
+
+  const pendingEnding = applyConfidenceDelta(idx, TIMEOUT_CONFIDENCE_PENALTY);
+  appendMessage(idx, s.timeoutLine, "assistant");
+
+  if (pendingEnding) {
+    concludeConversation(idx, pendingEnding);
+  } else if (s.status === "active") {
+    s.deadline = Date.now() + RESPONSE_TIME_LIMIT_MS;
+  }
+}
+
+function updateResponseTimerDisplay() {
+  const s = stakeholders[state.activeStakeholder];
+  const el = document.getElementById("response-timer");
+  if (!el) return;
+
+  if (!state.timersStarted || s.deadline == null || s.status !== "active") {
+    el.hidden = true;
+    el.classList.remove("response-timer-urgent");
+    return;
+  }
+
+  const totalSeconds = Math.max(0, Math.ceil((s.deadline - Date.now()) / 1000));
+  const mm = Math.floor(totalSeconds / 60);
+  const ss = totalSeconds % 60;
+  el.textContent = `⏱ ${mm}:${String(ss).padStart(2, "0")}`;
+  el.hidden = false;
+  el.classList.toggle("response-timer-urgent", totalSeconds <= RESPONSE_TIME_URGENT_SECONDS);
 }
 
 function labelForStakeholder(s) {
@@ -649,6 +761,7 @@ function restartSimulation() {
   state.actionCount = 0;
   state.roundStatus = "active";
   state.gameOverStakeholder = null;
+  state.timersStarted = false;
   stakeholders.forEach(initStakeholderRuntimeState);
 
   document.querySelectorAll(".switch-btn").forEach(b => b.classList.remove("active"));
@@ -665,6 +778,7 @@ function restartSimulation() {
   document.getElementById("feedback-loading").hidden = true;
 
   show("screen-simulation");
+  startAllTimersIfNeeded();
   renderActiveStakeholder();
 }
 
