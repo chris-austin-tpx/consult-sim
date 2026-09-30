@@ -1,5 +1,6 @@
 node_modules/
 .env
+.env.example
 
 # Local attempt history (personal practice data, not source) — see server.js
 .data/
