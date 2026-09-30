@@ -152,6 +152,8 @@ let stakeholders = [];
 
 function initStakeholderRuntimeState(s) {
   s.confidence = s.startConfidence;
+  // Change caused by the player's most recent message (null before the first).
+  s.lastDelta = null;
   // "active" | "won" | "lost" for scored stakeholders; noScoring stakeholders
   // only ever use "active" | "closed" (manually ended by the player).
   s.status = "active";
@@ -922,6 +924,7 @@ function applyConfidenceDelta(idx, delta) {
 
   const previousConfidence = s.confidence;
   s.confidence = Math.max(0, Math.min(100, s.confidence + delta));
+  s.lastDelta = s.confidence - previousConfidence;
 
   updateSentimentRow(idx);
   if (idx === state.activeStakeholder) updateConfidenceMeter();
@@ -1117,9 +1120,29 @@ function updateConfidenceMeter() {
 
   block.classList.remove("confidence-qualitative");
   document.getElementById("confidence-label").textContent = `Client Confidence — ${s.name}`;
-  document.getElementById("meter-confidence").style.width = s.confidence + "%";
-  document.getElementById("confidence-caption").textContent = `${s.confidence}% — ${captionForStakeholder(s)}`;
+  const face = document.getElementById("meter-confidence");
+  face.src = faceForConfidence(s.confidence);
+  face.alt = `${s.confidence}% confidence`;
+  document.getElementById("meter-percent").textContent = `${s.confidence}%`;
+
+  const deltaEl = document.getElementById("meter-delta");
+  const d = s.lastDelta;
+  deltaEl.className = "meter-delta" + (d > 0 ? " up" : d < 0 ? " down" : "");
+  deltaEl.textContent = d == null ? "" : d > 0 ? `▲ +${d}` : d < 0 ? `▼ ${d}` : "– 0";
+  deltaEl.title = d == null ? "" : "Effect of your last response";
+
+  document.getElementById("confidence-caption").textContent = captionForStakeholder(s);
 }
+
+// Ten faces (Microsoft Fluent Emoji 3D, MIT), one per 10% band: 0–9% is
+// face-0 (pouting) up to 90–100% as face-9 (star-struck).
+const FACE_COUNT = 10;
+function faceForConfidence(confidence) {
+  const band = Math.min(FACE_COUNT - 1, Math.floor(confidence / 10));
+  return `assets/faces/face-${band}.png`;
+}
+// Preload so swapping faces mid-conversation doesn't flash.
+for (let i = 0; i < FACE_COUNT; i++) new Image().src = `assets/faces/face-${i}.png`;
 
 function renderBannerReview(s) {
   const notesEl = document.getElementById("banner-notes");

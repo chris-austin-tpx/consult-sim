@@ -472,17 +472,25 @@ app.get("/api/health", (req, res) => {
   });
 });
 
-// Minimal connectivity check — one tiny request, no retries.
+// Minimal connectivity check — one tiny request, no retries. Shared by the
+// /api/gemini-test endpoint and the startup check below.
+async function pingGemini() {
+  const result = await withTimeout(
+    ai.models.generateContent({
+      model: MODEL,
+      contents: [{ role: "user", parts: [{ text: "Reply with exactly one word: OK" }] }],
+    }),
+    10000
+  );
+  return (result.text || "").trim();
+}
+
 app.get("/api/gemini-test", async (req, res) => {
   if (!ai) {
     return res.status(503).json({ ok: false, error: "GEMINI_API_KEY not configured" });
   }
   try {
-    const result = await ai.models.generateContent({
-      model: MODEL,
-      contents: [{ role: "user", parts: [{ text: "Reply with exactly one word: OK" }] }],
-    });
-    const text = (result.text || "").trim();
+    const text = await pingGemini();
     res.json({ ok: true, model: MODEL, reply: text });
   } catch (err) {
     console.error("[gemini-test] request failed:", err.message || err);
@@ -895,6 +903,12 @@ if (require.main === module) {
   app.listen(PORT, () => {
     console.log(`ConsultSim backend running at http://localhost:${PORT}`);
     console.log(`Gemini configured: ${Boolean(GEMINI_API_KEY)}`);
+    if (!ai) return;
+    // A key being present doesn't mean it works — make one real call so a bad
+    // key, wrong model name or network problem shows up at startup.
+    pingGemini()
+      .then((reply) => console.log(`Gemini test call OK (${MODEL}): "${reply}"`))
+      .catch((err) => console.error(`Gemini test call FAILED (${MODEL}):`, err.message || err));
   });
 }
 

@@ -676,18 +676,42 @@ body {
   font-size: 14px;
 }
 
-.meter {
-  height: 8px;
-  background: var(--bg-panel);
-  border-radius: 999px;
-  overflow: hidden;
-  border: 1px solid var(--border);
+.meter-face {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 4px 0;
 }
 
-.meter-fill {
-  height: 100%;
-  background: linear-gradient(90deg, var(--accent), var(--success));
-  transition: width 0.3s ease;
+.meter-face img {
+  width: 96px;
+  height: 96px;
+}
+
+.meter-readout {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.meter-percent {
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.meter-delta {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-dim);
+}
+
+.meter-delta.up {
+  color: var(--success);
+}
+
+.meter-delta.down {
+  color: var(--danger);
 }
 
 .meter-caption {
