@@ -32,7 +32,9 @@ const ai = GEMINI_API_KEY ? new GoogleGenAI({ apiKey: GEMINI_API_KEY }) : null;
 // it from ever being served as a public file (the same reason .env has
 // always been safe despite express.static(__dirname) above).
 // ---------------------------------------------------------------------------
-const DATA_DIR = path.join(__dirname, ".data");
+// Overridable so tests can point this at an isolated temp directory instead
+// of writing into the real local history file.
+const DATA_DIR = process.env.CONSULTSIM_DATA_DIR || path.join(__dirname, ".data");
 const HISTORY_FILE = path.join(DATA_DIR, "history.json");
 
 function readHistory() {
@@ -872,7 +874,14 @@ app.post("/api/attempts", (req, res) => {
   res.json({ ok: true, attempt: record });
 });
 
-app.listen(PORT, () => {
-  console.log(`ConsultSim backend running at http://localhost:${PORT}`);
-  console.log(`Gemini configured: ${Boolean(GEMINI_API_KEY)}`);
-});
+// Only start listening when this file is run directly (`node server.js` /
+// `npm start`) — not when required by a test file, which just needs `app`
+// to hand to supertest.
+if (require.main === module) {
+  app.listen(PORT, () => {
+    console.log(`ConsultSim backend running at http://localhost:${PORT}`);
+    console.log(`Gemini configured: ${Boolean(GEMINI_API_KEY)}`);
+  });
+}
+
+module.exports = app;
