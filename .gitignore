@@ -1,6 +1,9 @@
 node_modules/
 .env
 
+# Local attempt history (personal practice data, not source) — see server.js
+.data/
+
 # Company-internal reference documents — never commit these.
 # (e.g. progression framework / behaviours & impact spreadsheets used to
 # design the performance-review feature; the framework content itself only

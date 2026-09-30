@@ -166,6 +166,11 @@ document.getElementById("btn-feedback-back").addEventListener("click", () => sho
 document.getElementById("btn-feedback-restart").addEventListener("click", restartSimulation);
 document.getElementById("btn-retry-feedback").addEventListener("click", loadFeedback);
 document.getElementById("btn-end-checkin").addEventListener("click", endCheckin);
+document.getElementById("btn-view-progress").addEventListener("click", () => {
+  show("screen-progress");
+  loadProgress();
+});
+document.getElementById("btn-progress-back").addEventListener("click", () => show("screen-welcome"));
 
 function endCheckin() {
   const idx = state.activeStakeholder;
@@ -771,11 +776,153 @@ async function loadFeedback() {
 
     loading.hidden = true;
     content.hidden = false;
+
+    saveAttempt(data); // fire-and-forget — history is a nice-to-have, never blocks the UI
   } catch (err) {
     console.warn("Performance review unavailable:", err.message || err);
     loading.hidden = true;
     content.hidden = true;
     errorBox.hidden = false;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Local attempt history — saved once per completed round, right after the
+// full end-of-round review above succeeds. Read by the "My Progress" screen.
+// ---------------------------------------------------------------------------
+
+async function saveAttempt(feedbackData) {
+  try {
+    const record = {
+      level: feedbackData.level,
+      summary: feedbackData.summary,
+      strengths: feedbackData.strengths,
+      growthAreas: feedbackData.growthAreas,
+      nextLevelFocus: feedbackData.nextLevelFocus,
+      psychologicalSafetyNotes: feedbackData.psychologicalSafetyNotes,
+      stakeholders: stakeholders.map((s) => ({
+        key: s.key,
+        name: s.name,
+        noScoring: !!s.noScoring,
+        status: s.status,
+        confidence: s.noScoring ? null : s.confidence,
+        review: s.review || null
+      }))
+    };
+
+    await fetch("/api/attempts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(record)
+    });
+  } catch (err) {
+    console.warn("Could not save this attempt to history:", err.message || err);
+  }
+}
+
+function el(tag, className, text) {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (text != null) node.textContent = text;
+  return node;
+}
+
+function stakeholderBadge(s) {
+  let label;
+  let cls = "attempt-badge";
+
+  if (s.noScoring) {
+    label = `${s.name} — ${s.status === "closed" ? "Closed" : "Ongoing"}`;
+    cls += " attempt-badge-neutral";
+  } else {
+    const outcomeText = s.status === "won" ? "Won" : s.status === "lost" ? "Lost" : "Incomplete";
+    label = `${s.name} — ${outcomeText}${s.confidence != null ? ` (${s.confidence}%)` : ""}`;
+    cls += s.status === "won" ? " attempt-badge-won" : s.status === "lost" ? " attempt-badge-lost" : " attempt-badge-neutral";
+  }
+
+  return el("span", cls, label);
+}
+
+function renderAttemptCard(attempt) {
+  const card = el("div", "card attempt-card");
+
+  const header = el("div", "attempt-header");
+  header.appendChild(el("span", "attempt-level", attempt.level || "Unrated"));
+  const date = attempt.timestamp
+    ? new Date(attempt.timestamp).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })
+    : "";
+  header.appendChild(el("span", "attempt-date", date));
+  card.appendChild(header);
+
+  if (attempt.summary) card.appendChild(el("p", "attempt-summary", attempt.summary));
+
+  const badgeRow = el("div", "attempt-badges");
+  (attempt.stakeholders || []).forEach((s) => badgeRow.appendChild(stakeholderBadge(s)));
+  card.appendChild(badgeRow);
+
+  const detailsBtn = el("button", "btn btn-secondary attempt-details-btn", "View Full Feedback");
+  const details = el("div", "attempt-details");
+  details.hidden = true;
+
+  const addSection = (heading, bodyEl) => {
+    details.appendChild(el("h4", null, heading));
+    details.appendChild(bodyEl);
+  };
+
+  if (attempt.strengths && attempt.strengths.length) {
+    const ul = el("ul", "bullet-list");
+    attempt.strengths.forEach((item) => ul.appendChild(el("li", null, item)));
+    addSection("Strengths", ul);
+  }
+  if (attempt.growthAreas && attempt.growthAreas.length) {
+    const ul = el("ul", "bullet-list");
+    attempt.growthAreas.forEach((item) => ul.appendChild(el("li", null, item)));
+    addSection("Areas to Improve", ul);
+  }
+  if (attempt.nextLevelFocus) {
+    addSection("To Reach the Next Level", el("p", null, attempt.nextLevelFocus));
+  }
+  if (attempt.psychologicalSafetyNotes) {
+    addSection("Supporting Ben (Psychological Safety)", el("p", null, attempt.psychologicalSafetyNotes));
+  }
+
+  detailsBtn.addEventListener("click", () => {
+    details.hidden = !details.hidden;
+    detailsBtn.textContent = details.hidden ? "View Full Feedback" : "Hide Full Feedback";
+  });
+
+  card.appendChild(detailsBtn);
+  card.appendChild(details);
+  return card;
+}
+
+async function loadProgress() {
+  const container = document.getElementById("progress-list");
+  container.innerHTML = "";
+  container.appendChild(el("p", "progress-status", "Loading your history…"));
+
+  try {
+    const response = await fetch("/api/attempts");
+    const data = await response.json();
+    if (!response.ok || !data.ok) throw new Error(data.error || "Request failed");
+
+    container.innerHTML = "";
+
+    if (!data.attempts.length) {
+      container.appendChild(
+        el("p", "progress-status", "No attempts recorded yet — complete a full round to see it here.")
+      );
+      return;
+    }
+
+    data.attempts
+      .slice()
+      .reverse() // newest first
+      .forEach((attempt) => container.appendChild(renderAttemptCard(attempt)));
+  } catch (err) {
+    console.warn("Could not load attempt history:", err.message || err);
+    container.innerHTML = "";
+    container.appendChild(el("p", "progress-status", "Could not load your history right now."));
   }
 }
 

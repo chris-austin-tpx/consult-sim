@@ -4,6 +4,8 @@
 
 require("dotenv").config();
 const express = require("express");
+const fs = require("fs");
+const path = require("path");
 const { GoogleGenAI } = require("@google/genai");
 
 const PORT = process.env.PORT || 3000;
@@ -12,9 +14,40 @@ const MODEL = "gemini-3.5-flash-lite";
 
 const app = express();
 app.use(express.json({ limit: "64kb" }));
+// express.static's dotfile protection only checks the FINAL path segment,
+// not intermediate directories — /.data/history.json would otherwise be
+// served in full despite ".env" correctly 404ing. Block it explicitly and
+// deterministically rather than relying on that assumption.
+app.use((req, res, next) => {
+  if (req.path.startsWith("/.data")) return res.status(404).end();
+  next();
+});
 app.use(express.static(__dirname));
 
 const ai = GEMINI_API_KEY ? new GoogleGenAI({ apiKey: GEMINI_API_KEY }) : null;
+
+// ---------------------------------------------------------------------------
+// Local attempt history — a single JSON file, gitignored. Named with a
+// leading dot so express.static's default dotfile-ignoring behaviour keeps
+// it from ever being served as a public file (the same reason .env has
+// always been safe despite express.static(__dirname) above).
+// ---------------------------------------------------------------------------
+const DATA_DIR = path.join(__dirname, ".data");
+const HISTORY_FILE = path.join(DATA_DIR, "history.json");
+
+function readHistory() {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(HISTORY_FILE, "utf-8"));
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeHistory(entries) {
+  fs.mkdirSync(DATA_DIR, { recursive: true });
+  fs.writeFileSync(HISTORY_FILE, JSON.stringify(entries, null, 2), "utf-8");
+}
 
 // ---------------------------------------------------------------------------
 // Fictional Project Phoenix scenario content (synthetic only — nothing
@@ -810,6 +843,33 @@ app.post("/api/feedback", async (req, res) => {
     console.error("[feedback] Gemini request failed:", err && err.message ? err.message : err);
     res.status(502).json({ ok: false, error: "Performance review is unavailable right now" });
   }
+});
+
+// Local attempt history — list past attempts and save a completed one.
+// No auth, no multi-user separation: this is a single-local-user practice
+// tool, and the file lives outside the static-served path (see .data/ above).
+app.get("/api/attempts", (req, res) => {
+  res.json({ ok: true, attempts: readHistory() });
+});
+
+app.post("/api/attempts", (req, res) => {
+  const attempt = req.body || {};
+  const history = readHistory();
+  const record = {
+    id: Date.now().toString(36) + Math.random().toString(36).slice(2, 8),
+    timestamp: new Date().toISOString(),
+    level: typeof attempt.level === "string" ? attempt.level : null,
+    summary: typeof attempt.summary === "string" ? attempt.summary : "",
+    strengths: Array.isArray(attempt.strengths) ? attempt.strengths.map(String) : [],
+    growthAreas: Array.isArray(attempt.growthAreas) ? attempt.growthAreas.map(String) : [],
+    nextLevelFocus: typeof attempt.nextLevelFocus === "string" ? attempt.nextLevelFocus : "",
+    psychologicalSafetyNotes: typeof attempt.psychologicalSafetyNotes === "string" ? attempt.psychologicalSafetyNotes : "",
+    stakeholders: Array.isArray(attempt.stakeholders) ? attempt.stakeholders : [],
+  };
+
+  history.push(record);
+  writeHistory(history);
+  res.json({ ok: true, attempt: record });
 });
 
 app.listen(PORT, () => {

@@ -96,6 +96,11 @@ body {
   margin-bottom: 32px;
 }
 
+.welcome-secondary-btn {
+  display: block;
+  margin: 14px auto 0;
+}
+
 /* ---------- Shared header / nav ---------- */
 .page-header {
   display: flex;
@@ -703,6 +708,112 @@ body {
   flex-direction: column;
   align-items: center;
   gap: 16px;
+}
+
+/* ---------- My Progress screen ---------- */
+.progress-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.progress-status {
+  color: var(--text-dim);
+  font-size: 14px;
+  text-align: center;
+  padding: 40px 0;
+}
+
+.attempt-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.attempt-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.attempt-level {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.attempt-date {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.attempt-summary {
+  color: var(--text-dim);
+  font-size: 13.5px;
+  line-height: 1.6;
+  margin: 0;
+}
+
+.attempt-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.attempt-badge {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+}
+
+.attempt-badge-won { color: var(--success); border-color: rgba(62,207,142,0.35); background: rgba(62,207,142,0.1); }
+.attempt-badge-lost { color: var(--danger); border-color: rgba(232,96,124,0.35); background: rgba(232,96,124,0.1); }
+.attempt-badge-neutral { color: var(--text-dim); }
+
+.attempt-details-btn {
+  align-self: flex-start;
+}
+
+.attempt-details[hidden] {
+  display: none;
+}
+
+.attempt-details {
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.attempt-details h4 {
+  margin: 10px 0 2px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--text-dim);
+}
+
+.attempt-details h4:first-child {
+  margin-top: 0;
+}
+
+.attempt-details p,
+.attempt-details ul {
+  margin: 0;
+  font-size: 13.5px;
+  color: var(--text-dim);
+  line-height: 1.6;
+}
+
+.attempt-details ul {
+  padding-left: 18px;
 }
 
 /* ---------- Responsive ---------- */
