@@ -8,6 +8,16 @@
 // win/lost status, all persisted across switching between stakeholders
 // until the scenario is restarted.
 
+// Response-time pressure: the player has this long to reply once a
+// stakeholder has spoken. The clock only runs during the player's own
+// think time — it's paused (deadline cleared) while waiting on Gemini —
+// and runs in the background for every stakeholder at once, not just
+// whichever one is currently on screen.
+const RESPONSE_TIME_LIMIT_MS = 120000;
+const RESPONSE_TIME_URGENT_SECONDS = 20;
+const TIMEOUT_CONFIDENCE_PENALTY = -10;
+const TIMEOUT_MOOD_PENALTY = -8;
+
 // Simple, deliberately blunt detector for outright insults/abuse directed
 // at a stakeholder. Checked locally (no API call) so an obviously
 // outrageous message never even reaches Gemini.
@@ -51,6 +61,7 @@ function initStakeholderRuntimeState(s) {
   s.messageCount = 0;
   s.mood = 0; // noScoring only: silent running emotional trend, never displayed live
   s.review = null; // { headline, notes } once this conversation's quick review has loaded
+  s.deadline = null; // timestamp the player must respond by, or null while not their turn to reply
 }
 
 // Mutable simulation state
@@ -61,7 +72,8 @@ const state = {
   playerTurns: 0, // messages sent to anyone — what scenario events are timed against
   firedEvents: [], // ids of scenario events that have already happened this round
   roundStatus: "active", // "active" | "gameover" — losing ANY stakeholder ends the whole round
-  gameOverStakeholder: null
+  gameOverStakeholder: null,
+  timersStarted: false // becomes true once the player first enters the simulation screen
 };
 
 function rules() {
@@ -85,7 +97,10 @@ document.getElementById("btn-back-welcome").addEventListener("click", () => {
 });
 document.getElementById("btn-to-stakeholders").addEventListener("click", () => show("screen-stakeholders"));
 document.getElementById("btn-back-briefing").addEventListener("click", () => show("screen-briefing"));
-document.getElementById("btn-to-simulation").addEventListener("click", () => show("screen-simulation"));
+document.getElementById("btn-to-simulation").addEventListener("click", () => {
+  show("screen-simulation");
+  startAllTimersIfNeeded();
+});
 document.getElementById("btn-back-stakeholders").addEventListener("click", () => show("screen-stakeholders"));
 document.getElementById("btn-restart").addEventListener("click", restartSimulation);
 document.getElementById("btn-view-feedback").addEventListener("click", () => {
@@ -273,8 +288,10 @@ function endCheckin() {
   if (!s.noScoring || s.status !== "active") return;
 
   s.status = "closed";
+  s.deadline = null;
   logAction(`Ended check-in with ${s.name}`);
   updateComposerAndBanner();
+  updateResponseTimerDisplay();
   requestConversationReview(idx, "closed");
 }
 
@@ -308,6 +325,7 @@ function renderActiveStakeholder() {
 
   updateConfidenceMeter();
   updateComposerAndBanner();
+  updateResponseTimerDisplay();
 }
 
 // `speaker` is who's actually talking (e.g. "Satish Patel"); `primaryName` is
@@ -423,6 +441,11 @@ async function sendResponse() {
   input.value = "";
   state.playerTurns++;
 
+  // The player just replied — pause their clock while we wait on a
+  // response, then restart it once it's their turn again (below).
+  s.deadline = null;
+  if (idx === state.activeStakeholder) updateResponseTimerDisplay();
+
   logAction(`Responded to ${s.name}`);
 
   // Ben's conversation is a qualitative, unscored check-in — no insult
@@ -433,6 +456,8 @@ async function sendResponse() {
     if (typeof moodDelta === "number") {
       s.mood = Math.max(-50, Math.min(50, s.mood + moodDelta));
     }
+    if (s.status === "active") s.deadline = Date.now() + RESPONSE_TIME_LIMIT_MS;
+    if (idx === state.activeStakeholder) updateResponseTimerDisplay();
     fireDueEvents();
     return;
   }
@@ -459,6 +484,8 @@ async function sendResponse() {
       fireDueEvents();
     }, 500);
   } else {
+    s.deadline = Date.now() + RESPONSE_TIME_LIMIT_MS;
+    if (idx === state.activeStakeholder) updateResponseTimerDisplay();
     fireDueEvents();
   }
 }
@@ -649,16 +676,20 @@ function applyConfidenceDelta(idx, delta) {
 function concludeConversation(idx, outcome) {
   const s = stakeholders[idx];
   s.status = outcome; // "won" | "lost"
+  s.deadline = null;
   updateSentimentRow(idx);
   logAction(`Conversation with ${s.name} ended — ${outcome === "won" ? "Won" : "Lost"}`);
 
   if (outcome === "lost") {
-    // Losing any one stakeholder ends the whole round — game over.
+    // Losing any one SCORED stakeholder ends the whole round — game over.
+    // Ben's check-in is exempt: it was never part of the pass/fail
+    // engagement, so it isn't dragged into the cascade.
     state.roundStatus = "gameover";
     state.gameOverStakeholder = s.name;
     stakeholders.forEach((other, otherIdx) => {
-      if (otherIdx !== idx && other.status === "active") {
+      if (otherIdx !== idx && !other.noScoring && other.status === "active") {
         other.status = "lost";
+        other.deadline = null;
         updateSentimentRow(otherIdx);
       }
     });
@@ -678,6 +709,82 @@ function checkRoundComplete() {
   const scored = stakeholders.filter((s) => !s.noScoring);
   const complete = state.roundStatus === "gameover" || scored.every((s) => s.status === "won");
   document.getElementById("btn-view-feedback").hidden = !complete;
+}
+
+// ---------------------------------------------------------------------------
+// Response-time pressure
+// ---------------------------------------------------------------------------
+
+// Idempotent — safe to call every time the player enters the simulation
+// screen. Only actually starts the clocks once per round, so navigating
+// back to Stakeholders and forward again mid-round can't be used to farm
+// free thinking time.
+function startAllTimersIfNeeded() {
+  if (state.timersStarted) return;
+  state.timersStarted = true;
+  const now = Date.now();
+  stakeholders.forEach((s) => {
+    if (s.status === "active") s.deadline = now + RESPONSE_TIME_LIMIT_MS;
+  });
+  updateResponseTimerDisplay();
+}
+
+// Runs every second in the background for ALL FOUR conversations at once,
+// not just whichever one is on screen — switching away doesn't stop anyone's
+// clock. Each stakeholder's own deadline is an absolute timestamp, so this
+// is accurate regardless of how often (or rarely) it's checked.
+function tickTimers() {
+  if (!state.timersStarted) return;
+  const now = Date.now();
+  stakeholders.forEach((s, idx) => {
+    if (s.status !== "active" || s.deadline == null) return;
+    if (now >= s.deadline) handleResponseTimeout(idx);
+  });
+  updateResponseTimerDisplay();
+}
+
+setInterval(tickTimers, 1000);
+
+function handleResponseTimeout(idx) {
+  const s = stakeholders[idx];
+  s.deadline = null;
+  logAction(`${s.name} grew impatient waiting for a response`);
+
+  if (s.noScoring) {
+    s.mood = Math.max(-50, Math.min(50, s.mood + TIMEOUT_MOOD_PENALTY));
+    appendMessage(idx, s.timeoutLine, "assistant");
+    s.deadline = Date.now() + RESPONSE_TIME_LIMIT_MS; // no hard fail — just a fresh window
+    if (idx === state.activeStakeholder) updateComposerAndBanner();
+    return;
+  }
+
+  const pendingEnding = applyConfidenceDelta(idx, TIMEOUT_CONFIDENCE_PENALTY);
+  appendMessage(idx, s.timeoutLine, "assistant");
+
+  if (pendingEnding) {
+    concludeConversation(idx, pendingEnding);
+  } else if (s.status === "active") {
+    s.deadline = Date.now() + RESPONSE_TIME_LIMIT_MS;
+  }
+}
+
+function updateResponseTimerDisplay() {
+  const s = stakeholders[state.activeStakeholder];
+  const el = document.getElementById("response-timer");
+  if (!el) return;
+
+  if (!state.timersStarted || s.deadline == null || s.status !== "active") {
+    el.hidden = true;
+    el.classList.remove("response-timer-urgent");
+    return;
+  }
+
+  const totalSeconds = Math.max(0, Math.ceil((s.deadline - Date.now()) / 1000));
+  const mm = Math.floor(totalSeconds / 60);
+  const ss = totalSeconds % 60;
+  el.textContent = `⏱ ${mm}:${String(ss).padStart(2, "0")}`;
+  el.hidden = false;
+  el.classList.toggle("response-timer-urgent", totalSeconds <= RESPONSE_TIME_URGENT_SECONDS);
 }
 
 function labelForStakeholder(s) {
@@ -726,9 +833,23 @@ function updateConfidenceMeter() {
 
 function renderBannerReview(s) {
   const notesEl = document.getElementById("banner-notes");
+  const resourcesEl = document.getElementById("banner-resources");
   notesEl.classList.remove("banner-notes-loading");
+  resourcesEl.innerHTML = "";
+
   if (s.review) {
     notesEl.textContent = s.review.headline ? `“${s.review.headline}” — ${s.review.notes}` : s.review.notes;
+
+    (s.review.resources || []).forEach((resource) => {
+      const link = document.createElement("a");
+      link.className = "banner-resource-link";
+      link.href = resource.url;
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      link.textContent = `📖 ${resource.title}`;
+      link.title = resource.description || "";
+      resourcesEl.appendChild(link);
+    });
   } else {
     notesEl.textContent = "Assessing this conversation…";
     notesEl.classList.add("banner-notes-loading");
@@ -816,6 +937,7 @@ function resetRound() {
   state.gameOverStakeholder = null;
   // Fresh copies, so runtime state never leaks back into the scenario data.
   stakeholders = state.scenario.stakeholders.map((s) => ({ ...s }));
+  state.timersStarted = false;
   stakeholders.forEach(initStakeholderRuntimeState);
 
   highlightActiveSwitch();
@@ -832,6 +954,8 @@ function resetRound() {
   document.getElementById("feedback-error").hidden = true;
   document.getElementById("feedback-loading").hidden = true;
 
+  show("screen-simulation");
+  startAllTimersIfNeeded();
   renderActiveStakeholder();
 }
 
@@ -899,10 +1023,16 @@ async function requestConversationReview(idx, outcome) {
     const data = await response.json();
     if (!response.ok || !data.ok) throw new Error(data.error || "Request failed");
 
-    s.review = { headline: data.headline, notes: data.notes };
+    s.review = {
+      headline: data.headline,
+      notes: data.notes,
+      // Real objects from the server's fixed, hand-verified catalog — see
+      // LEARNING_RESOURCES in server.js. Never raw model output.
+      resources: Array.isArray(data.relatedResources) ? data.relatedResources : []
+    };
   } catch (err) {
     console.warn(`Conversation review unavailable for ${s.name}:`, err.message || err);
-    s.review = { headline: "", notes: "" }; // fail silently — the outcome banner itself still shows
+    s.review = { headline: "", notes: "", resources: [] }; // fail silently — the outcome banner itself still shows
   }
 
   if (idx === state.activeStakeholder) updateComposerAndBanner();

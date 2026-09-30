@@ -4,13 +4,16 @@ An AI-powered client engagement simulator, originally built as a hackathon proto
 
 ## What it does
 
-You're the lead consultant on **Project Phoenix** — a fictional client migrating a legacy on-premise data warehouse to Azure Databricks. You'll hold conversations with three stakeholders, each with their own personality, motivations, and concerns:
+You're the lead consultant on **Project Phoenix** — a fictional client migrating a legacy on-premise data warehouse to Azure Databricks. You'll hold conversations with four characters, each with their own personality, motivations, and concerns:
 
 - **Jenny Mensah** — Chief Financial Officer, direct and numbers-driven, focused on the month-end close timeline
 - **David Kowalski** — Head of IT Infrastructure, protective of his team and skeptical of outside consultants. He brings his senior cloud engineer, **Satish Patel**, into the conversation to ask technical questions about the target platform (data storage, multi-tenancy, security) — give a wrong answer and Satish will call it out
 - **Priya Anand** — Finance Operations Manager, pragmatic and capacity-constrained around month-end close
+- **Ben Carter** — a junior developer on the project, feeling overwhelmed and reaching out for support. His conversation is deliberately *not* scored — no confidence bar, no win/loss — it's a psychological-safety check-in, closed manually with an "End Check-in" button when you feel it's reached a natural conclusion
 
-Each conversation tracks a **confidence score** that rises or falls based on the quality of your answers (judged by the AI in-character, not by superficial things like message length). Reach 80% and you've won that stakeholder over; drop below 30%, or say something genuinely outrageous, and you lose them — and losing any one stakeholder ends the whole round.
+Each of the three client conversations tracks a **confidence score** that rises or falls based on the quality of your answers (judged by the AI in-character, not by superficial things like message length). Reach 80% and you've won that stakeholder over; drop below 30% while trending downward, or say something genuinely outrageous, and you lose them — and losing any one stakeholder ends the whole round. Ben tracks a similar but entirely internal, never-displayed "mood" signal instead, used only to inform his closing assessment.
+
+Every conversation — scored or not — gets a quick, honest **AI-generated qualitative review** the moment it concludes, citing real moments rather than generic praise. Once all three client conversations are decided (won, or the round ends early on a loss), you also get a **full end-of-round performance review**: level (Junior/Graduate through Principal), strengths, growth areas, and — separately, never affecting the level — qualitative notes on how you supported Ben. Every completed round is saved locally and browsable from the "My Progress" screen.
 
 ### Scenarios and difficulty
 
@@ -113,7 +116,16 @@ The app still runs — every stakeholder falls back to a small set of scripted r
 - **Gemini model availability changes.** The model name is hardcoded in `server.js` (`MODEL` constant). Google periodically retires older models in favour of newer ones — if you start seeing 404 errors, check what's currently available on your API key and update the constant.
 - **Free-tier rate limits are real.** You may see stakeholders "thinking" for a long time (up to ~30 retries with backoff) during periods of high demand on Google's side — this is expected and by design, not a bug, though it can make a live demo feel slow at the worst possible moment.
 - **The confidence-scoring heuristic for the *fallback* path (when Gemini is unavailable) is crude** — it's based on message length, not content, since there's no AI available to judge it. This only kicks in when Gemini itself has failed, so it's a safety net, not the primary scoring mechanism.
-- **Tests cover scenario data only.** `npm test` validates every scenario file and the persona merging. Gameplay has been verified manually in the browser.
+- **Test coverage is deliberately narrow.** `server.test.js` covers input validation and the deterministic "Gemini not configured" fallback paths on every route (see [Testing](#testing) below) — it never calls the real Gemini API, so it says nothing about whether a live model response is actually good. That's still verified manually, in-browser.
+- **Persistence is local and basic.** Completed rounds are saved to a gitignored `.data/history.json` and browsable from the "My Progress" screen, but there's no backup, export, or multi-machine sync — it's tied to whichever machine's repo checkout the file lives in.
+
+## Testing
+
+```bash
+npm test
+```
+
+Runs `server.test.js` (Jest + supertest) against the exported Express app. Tests force `GEMINI_API_KEY` empty and point `.data` at an isolated temp directory before the app loads, so the suite is fast, deterministic, and never touches your real history file or a live Gemini call — it covers input validation and the "Gemini not configured" fallback paths, not response quality.
 
 ## Project structure
 
@@ -123,7 +135,10 @@ The app still runs — every stakeholder falls back to a small set of scripted r
 ├── styles.css           # All styling
 ├── script.js            # Frontend logic
 ├── server.js             # Backend: Gemini proxy, character prompts, scoring, feedback rubric
+├── server.test.js        # Jest/supertest integration tests (see Testing above)
 ├── package.json
 ├── .env.example          # Template for your local .env (never commit the real one)
+├── .data/                 # (gitignored) local attempt history — see "My Progress" in the app
+├── .claude/skills/        # Project-scoped Claude Code skills
 └── reference_files/      # (gitignored) local-only reference material, not part of the app
 ```
