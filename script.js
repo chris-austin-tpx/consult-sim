@@ -165,7 +165,12 @@ function initStakeholderRuntimeState(s) {
   s.messageCount = 0;
   s.mood = 0; // noScoring only: silent running emotional trend, never displayed live
   s.review = null; // { headline, notes } once this conversation's quick review has loaded
-  s.deadline = null; // timestamp the player must respond by, or null while not their turn to reply
+  // Countdown in ms until this stakeholder times out — null while it isn't
+  // running (waiting on a reply, concluded, or simply not the conversation
+  // currently on screen). Each stakeholder's clock only ticks while THEY are
+  // the active one; switching away freezes it exactly where it was, and
+  // switching back resumes it — conversations never expire in the background.
+  s.remainingMs = null;
 }
 
 // Mutable simulation state
@@ -394,7 +399,7 @@ function endCheckin() {
   if (!s.noScoring || s.status !== "active") return;
 
   s.status = "closed";
-  s.deadline = null;
+  s.remainingMs = null;
   logAction(`Ended check-in with ${s.name}`);
   updateComposerAndBanner();
   updateResponseTimerDisplay();
@@ -692,7 +697,7 @@ async function sendResponse() {
 
   // The player just replied — pause their clock while we wait on a
   // response, then restart it once it's their turn again (below).
-  s.deadline = null;
+  s.remainingMs = null;
   if (idx === state.activeStakeholder) updateResponseTimerDisplay();
 
   logAction(`Responded to ${s.name}`);
@@ -710,7 +715,7 @@ async function sendResponse() {
         refreshActiveAvatarFace();
       }
     }
-    if (s.status === "active") s.deadline = Date.now() + responseTimeLimitMs;
+    if (s.status === "active") s.remainingMs = responseTimeLimitMs;
     if (idx === state.activeStakeholder) updateResponseTimerDisplay();
     fireDueEvents();
     return;
@@ -738,7 +743,7 @@ async function sendResponse() {
       fireDueEvents();
     }, 500);
   } else {
-    s.deadline = Date.now() + responseTimeLimitMs;
+    s.remainingMs = responseTimeLimitMs;
     if (idx === state.activeStakeholder) updateResponseTimerDisplay();
     fireDueEvents();
   }
@@ -943,7 +948,7 @@ function applyConfidenceDelta(idx, delta) {
 function concludeConversation(idx, outcome) {
   const s = stakeholders[idx];
   s.status = outcome; // "won" | "lost"
-  s.deadline = null;
+  s.remainingMs = null;
   updateSentimentRow(idx);
   logAction(`Conversation with ${s.name} ended — ${outcome === "won" ? "Won" : "Lost"}`);
 
@@ -961,7 +966,7 @@ function concludeConversation(idx, outcome) {
     stakeholders.forEach((other, otherIdx) => {
       if (otherIdx !== idx && !other.noScoring && other.status === "active") {
         other.status = "lost";
-        other.deadline = null;
+        other.remainingMs = null;
         updateSentimentRow(otherIdx);
       }
     });
@@ -994,42 +999,50 @@ function checkRoundComplete() {
 function startAllTimersIfNeeded() {
   if (state.timersStarted) return;
   state.timersStarted = true;
-  const now = Date.now();
+  // Every stakeholder's clock is armed with a full window, but — see
+  // tickTimers below — only the one currently on screen actually counts
+  // down. The rest stay frozen at this value until the player switches to
+  // them for the first time.
   stakeholders.forEach((s) => {
-    if (s.status === "active") s.deadline = now + responseTimeLimitMs;
+    if (s.status === "active") s.remainingMs = responseTimeLimitMs;
   });
   updateResponseTimerDisplay();
 }
 
-// Runs every second in the background for ALL FOUR conversations at once,
-// not just whichever one is on screen — switching away doesn't stop anyone's
-// clock. Each stakeholder's own deadline is an absolute timestamp, so this
-// is accurate regardless of how often (or rarely) it's checked.
+// Runs every second, but only ever touches the ACTIVE conversation's clock.
+// The other three stakeholders' remainingMs is left exactly where it was —
+// switching away freezes a conversation's countdown, switching back resumes
+// it from the same point, and nothing can time out in the background.
 function tickTimers() {
   if (!state.timersStarted) return;
-  const now = Date.now();
-  stakeholders.forEach((s, idx) => {
-    if (s.status !== "active" || s.deadline == null) return;
-    if (now >= s.deadline) handleResponseTimeout(idx);
-  });
-  updateResponseTimerDisplay();
+  const idx = state.activeStakeholder;
+  const s = stakeholders[idx];
+  if (s.status !== "active" || s.remainingMs == null) return;
+
+  s.remainingMs -= 1000;
+  if (s.remainingMs <= 0) {
+    handleResponseTimeout(idx);
+  } else {
+    updateResponseTimerDisplay();
+  }
 }
 
 setInterval(tickTimers, 1000);
 
 function handleResponseTimeout(idx) {
   const s = stakeholders[idx];
-  s.deadline = null;
+  s.remainingMs = null;
   logAction(`${s.name} grew impatient waiting for a response`);
 
   if (s.noScoring) {
     s.mood = Math.max(-50, Math.min(50, s.mood + TIMEOUT_MOOD_PENALTY));
     appendMessage(idx, s.timeoutLine, "assistant");
-    s.deadline = Date.now() + responseTimeLimitMs; // no hard fail — just a fresh window
+    s.remainingMs = responseTimeLimitMs; // no hard fail — just a fresh window
     if (idx === state.activeStakeholder) {
       triggerAvatarReaction(idx, "shake");
       refreshActiveAvatarFace();
       updateComposerAndBanner();
+      updateResponseTimerDisplay();
     }
     return;
   }
@@ -1040,7 +1053,8 @@ function handleResponseTimeout(idx) {
   if (pendingEnding) {
     concludeConversation(idx, pendingEnding);
   } else if (s.status === "active") {
-    s.deadline = Date.now() + responseTimeLimitMs;
+    s.remainingMs = responseTimeLimitMs;
+    updateResponseTimerDisplay();
   }
 }
 
@@ -1049,13 +1063,13 @@ function updateResponseTimerDisplay() {
   const el = document.getElementById("response-timer");
   if (!el) return;
 
-  if (!state.timersStarted || s.deadline == null || s.status !== "active") {
+  if (!state.timersStarted || s.remainingMs == null || s.status !== "active") {
     el.hidden = true;
     el.classList.remove("response-timer-urgent");
     return;
   }
 
-  const totalSeconds = Math.max(0, Math.ceil((s.deadline - Date.now()) / 1000));
+  const totalSeconds = Math.max(0, Math.ceil(s.remainingMs / 1000));
   const mm = Math.floor(totalSeconds / 60);
   const ss = totalSeconds % 60;
   el.textContent = `⏱ ${mm}:${String(ss).padStart(2, "0")}`;
