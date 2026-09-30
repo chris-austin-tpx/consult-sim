@@ -13,6 +13,8 @@ You're the lead consultant on **Project Phoenix** — a fictional client migrati
 
 Each of the three client conversations tracks a **confidence score** that rises or falls based on the quality of your answers (judged by the AI in-character, not by superficial things like message length). Reach 80% and you've won that stakeholder over; drop below 30% while trending downward, or say something genuinely outrageous, and you lose them — and losing any one stakeholder ends the whole round. Ben tracks a similar but entirely internal, never-displayed "mood" signal instead, used only to inform his closing assessment.
 
+**You negotiate your own thinking time.** Before the round starts, the Stakeholders screen has a pinball-style launcher: press and hold the plunger on the left of the line, then let go. The longer you hold, the further the ball rolls, and where it stops sets how long you get to reply to each message (15 seconds to 3 minutes, in zones from "Elevator Pitch" to "Fully Billable"). Hold too long and the ball flies off the end into "Out of Scope", leaving you 10 seconds a reply. You get three shots, and the last one stands. Let the clock run out on a stakeholder and their confidence takes a hit.
+
 Every conversation — scored or not — gets a quick, honest **AI-generated qualitative review** the moment it concludes, citing real moments rather than generic praise. Once all three client conversations are decided (won, or the round ends early on a loss), you also get a **full end-of-round performance review**: level (Junior/Graduate through Principal), strengths, growth areas, and — separately, never affecting the level — qualitative notes on how you supported Ben. Every completed round is saved locally and browsable from the "My Progress" screen.
 
 ### Scenarios and difficulty
@@ -134,6 +136,8 @@ Runs `server.test.js` (Jest + supertest) against the exported Express app. Tests
 ├── index.html          # All screens/markup
 ├── styles.css           # All styling
 ├── script.js            # Frontend logic
+├── launcher.js          # Pure maths for the response-time launcher (hold time → distance → seconds)
+├── launcher.test.js     # Unit tests for launcher.js
 ├── server.js             # Backend: Gemini proxy, character prompts, scoring, feedback rubric
 ├── server.test.js        # Jest/supertest integration tests (see Testing above)
 ├── package.json

@@ -13,8 +13,15 @@
 // think time — it's paused (deadline cleared) while waiting on Gemini —
 // and runs in the background for every stakeholder at once, not just
 // whichever one is currently on screen.
-const RESPONSE_TIME_LIMIT_MS = 120000;
-const RESPONSE_TIME_URGENT_SECONDS = 20;
+// Per-message response window. No longer fixed: the player sets it on the
+// Stakeholders screen by firing a ball down a line (see the launcher section
+// below and launcher.js). 120s is only the fallback if that never happens.
+let responseTimeLimitMs = 120000;
+// The clock turns red for the last 20s — or the last third, if the player
+// only negotiated themselves a tiny window.
+function responseUrgentSeconds() {
+  return Math.min(20, Math.ceil(responseTimeLimitMs / 1000 / 3));
+}
 const TIMEOUT_CONFIDENCE_PENALTY = -10;
 const TIMEOUT_MOOD_PENALTY = -8;
 
@@ -42,6 +49,103 @@ function isOutrageous(text) {
   return INSULT_PATTERNS.some((re) => re.test(text));
 }
 
+// ---------------------------------------------------------------------------
+// Illustrated avatars — simple SVG cartoon faces (no image assets), one hair
+// silhouette per character, with a facial expression that reflects how that
+// stakeholder currently feels toward the player, plus transient head-motion
+// reactions (nod/shake/rage/cheer) on the moment their feeling changes.
+// ---------------------------------------------------------------------------
+
+const AVATAR_HAIR = {
+  // Jenny — neat professional bob.
+  jenny: { fill: "#3b2a20", d: "M18,46 Q16,10 50,10 Q84,10 82,46 L82,56 Q75,44 75,38 Q75,20 50,20 Q25,20 25,38 Q25,44 18,56 Z" },
+  // David — short, greying, receding — plus simple glasses drawn separately.
+  david: { fill: "#9a9a9a", d: "M20,42 Q18,26 30,20 Q26,30 27,42 Z M80,42 Q82,26 70,20 Q74,30 73,42 Z M30,18 Q50,10 70,18 Q66,14 50,14 Q34,14 30,18 Z" },
+  // Priya — longer hair past the jawline.
+  priya: { fill: "#241a12", d: "M17,48 Q15,10 50,9 Q85,10 83,48 L83,66 Q76,60 75,48 Q75,20 50,19 Q25,20 25,48 Q24,60 17,66 Z" },
+  // Ben — messy, spiky, younger.
+  ben: { fill: "#6b4a30", d: "M20,40 L26,16 L34,32 L42,12 L50,30 L58,12 L66,32 L74,16 L80,40 Q65,26 50,28 Q35,26 20,40 Z" },
+};
+
+// Facial feature paths per emotional state, in the same 0-100 viewBox as the
+// face. `eyeRy` narrows the eyes for anger, widens them for worry.
+const AVATAR_EXPRESSIONS = {
+  neutral: { browL: "M30,42 Q38,38 46,42", browR: "M54,42 Q62,38 70,42", mouth: "M38,70 Q50,74 62,70", eyeRy: 3.2 },
+  happy: { browL: "M30,40 Q38,37 46,40", browR: "M54,40 Q62,37 70,40", mouth: "M34,68 Q50,83 66,68", eyeRy: 3.2 },
+  worried: { browL: "M30,45 Q38,38 46,42", browR: "M70,45 Q62,38 54,42", mouth: "M38,73 Q50,69 62,73", eyeRy: 3.7 },
+  angry: { browL: "M28,37 L46,46", browR: "M72,37 L54,46", mouth: "M34,75 Q50,63 66,75", eyeRy: 1.8 },
+};
+
+// SVG namespace helper — createElement won't work for SVG children.
+function svgEl(tag, attrs) {
+  const node = document.createElementNS("http://www.w3.org/2000/svg", tag);
+  Object.entries(attrs || {}).forEach(([k, v]) => node.setAttribute(k, v));
+  return node;
+}
+
+function buildAvatarFace(key, expressionKey) {
+  const hair = AVATAR_HAIR[key] || AVATAR_HAIR.ben;
+  const expr = AVATAR_EXPRESSIONS[expressionKey] || AVATAR_EXPRESSIONS.neutral;
+
+  const svg = svgEl("svg", { viewBox: "0 0 100 100", class: "avatar-face-svg" });
+  svg.appendChild(svgEl("circle", { cx: 50, cy: 56, r: 34, fill: "#f4d9c0" })); // face/skin
+  svg.appendChild(svgEl("path", { d: hair.d, fill: hair.fill })); // hair (drawn over the top edge of the face)
+  if (key === "david") {
+    // Simple glasses: two rims + bridge.
+    svg.appendChild(svgEl("circle", { cx: 38, cy: 51, r: 8, fill: "none", stroke: "#3b3b3b", "stroke-width": 2.5 }));
+    svg.appendChild(svgEl("circle", { cx: 62, cy: 51, r: 8, fill: "none", stroke: "#3b3b3b", "stroke-width": 2.5 }));
+    svg.appendChild(svgEl("line", { x1: 46, y1: 51, x2: 54, y2: 51, stroke: "#3b3b3b", "stroke-width": 2.5 }));
+  }
+  svg.appendChild(svgEl("ellipse", { cx: 38, cy: 51, rx: 3.2, ry: expr.eyeRy, fill: "#2a2018" }));
+  svg.appendChild(svgEl("ellipse", { cx: 62, cy: 51, rx: 3.2, ry: expr.eyeRy, fill: "#2a2018" }));
+  svg.appendChild(svgEl("path", { d: expr.browL, stroke: "#2a2018", "stroke-width": 3, fill: "none", "stroke-linecap": "round" }));
+  svg.appendChild(svgEl("path", { d: expr.browR, stroke: "#2a2018", "stroke-width": 3, fill: "none", "stroke-linecap": "round" }));
+  svg.appendChild(svgEl("path", { d: expr.mouth, stroke: "#7a3b3b", "stroke-width": 3, fill: "none", "stroke-linecap": "round" }));
+  return svg;
+}
+
+// What a stakeholder is currently feeling, purely from state already on the
+// object — no separate tracking needed. "angry"/"happy" are terminal (won/
+// lost); everything else reflects the live confidence or mood trend.
+function computeExpressionKey(s) {
+  if (s.status === "lost") return "angry";
+  if (s.status === "won") return "happy";
+  if (s.noScoring) {
+    if (s.mood >= 20) return "happy";
+    if (s.mood <= -20) return "worried";
+    return "neutral";
+  }
+  if (s.confidence >= 70) return "happy";
+  if (s.confidence <= 35) return "worried";
+  return "neutral";
+}
+
+function refreshAvatarFace(container, s) {
+  container.innerHTML = "";
+  container.appendChild(buildAvatarFace(s.key, computeExpressionKey(s)));
+}
+
+function refreshActiveAvatarFace() {
+  const container = document.getElementById("active-avatar");
+  if (container) refreshAvatarFace(container, stakeholders[state.activeStakeholder]);
+}
+
+const AVATAR_REACTION_DURATIONS = { nod: 600, shake: 600, cheer: 700, rage: 900 };
+
+// Only animates when this stakeholder is the one currently on screen —
+// there's only one avatar element in the DOM, so a background reaction
+// (e.g. a scenario event affecting someone else) simply updates their
+// state silently until the player switches to them.
+function triggerAvatarReaction(idx, reaction) {
+  if (!reaction || idx !== state.activeStakeholder) return;
+  const el = document.getElementById("active-avatar");
+  if (!el) return;
+  Object.keys(AVATAR_REACTION_DURATIONS).forEach((r) => el.classList.remove(`avatar-anim-${r}`));
+  void el.offsetWidth; // restart the animation even if the same class was just removed
+  el.classList.add(`avatar-anim-${reaction}`);
+  setTimeout(() => el.classList.remove(`avatar-anim-${reaction}`), AVATAR_REACTION_DURATIONS[reaction]);
+}
+
 // The chosen scenario's cast, with runtime state layered on by
 // initStakeholderRuntimeState. Empty until a scenario is picked.
 let stakeholders = [];
@@ -61,7 +165,12 @@ function initStakeholderRuntimeState(s) {
   s.messageCount = 0;
   s.mood = 0; // noScoring only: silent running emotional trend, never displayed live
   s.review = null; // { headline, notes } once this conversation's quick review has loaded
-  s.deadline = null; // timestamp the player must respond by, or null while not their turn to reply
+  // Countdown in ms until this stakeholder times out — null while it isn't
+  // running (waiting on a reply, concluded, or simply not the conversation
+  // currently on screen). Each stakeholder's clock only ticks while THEY are
+  // the active one; switching away freezes it exactly where it was, and
+  // switching back resumes it — conversations never expire in the background.
+  s.remainingMs = null;
 }
 
 // Mutable simulation state
@@ -264,7 +373,9 @@ function renderScenarioScreens() {
 
 function renderStakeholderCard(s) {
   const card = el("div", "stakeholder-card" + (s.noScoring ? " stakeholder-card-support" : ""));
-  card.appendChild(el("div", `avatar ${s.avatarClass}`, s.initials));
+  const avatarContainer = el("div", `avatar ${s.avatarClass}`);
+  avatarContainer.appendChild(buildAvatarFace(s.key, "neutral"));
+  card.appendChild(avatarContainer);
   card.appendChild(el("h3", null, s.name));
   card.appendChild(el("div", "role", s.role));
 
@@ -288,7 +399,7 @@ function endCheckin() {
   if (!s.noScoring || s.status !== "active") return;
 
   s.status = "closed";
-  s.deadline = null;
+  s.remainingMs = null;
   logAction(`Ended check-in with ${s.name}`);
   updateComposerAndBanner();
   updateResponseTimerDisplay();
@@ -313,8 +424,8 @@ function highlightActiveSwitch() {
 function renderActiveStakeholder() {
   const s = stakeholders[state.activeStakeholder];
   const avatarEl = document.getElementById("active-avatar");
-  avatarEl.textContent = s.initials;
   avatarEl.className = "avatar avatar-sm " + s.avatarClass;
+  refreshAvatarFace(avatarEl, s);
   document.getElementById("active-name").textContent = s.name;
   document.getElementById("active-role").textContent = s.role;
 
@@ -409,6 +520,149 @@ function removeTypingIndicator() {
   if (el) el.remove();
 }
 
+// --- Response-time launcher (Stakeholders screen) ---
+// Press and hold the plunger, release to fire the ball. Where it stops sets
+// responseTimeLimitMs for the round. The maths lives in launcher.js; this is
+// just input handling and animation. The chosen time sticks across restarts.
+(function initLauncher() {
+  const L = window.Launcher;
+  if (!L) return;
+  const { FULL_CHARGE_MS, MAX_SHOTS, JITTER } = L.LAUNCHER_CONFIG;
+  const POWER_BAR_MAX = 1.5; // the power bar shows up to 150% charge; past 100% is the danger zone
+
+  const plunger = document.getElementById("launcher-plunger");
+  const ball = document.getElementById("launcher-ball");
+  const line = document.querySelector(".launcher-line");
+  const powerFill = document.getElementById("launcher-power-fill");
+  const timeEl = document.getElementById("launcher-time");
+  const zoneEl = document.getElementById("launcher-zone");
+  const quipEl = document.getElementById("launcher-quip");
+  const shotsEl = document.getElementById("launcher-shots");
+  const startBtn = document.getElementById("btn-to-simulation");
+
+  let shotsLeft = MAX_SHOTS;
+  let chargeStart = null;
+  let chargeRaf = null;
+  let flying = false;
+
+  const chargeQuips = [
+    [0.25, "Modest ask…"],
+    [0.6, "Building a business case…"],
+    [0.9, "Ambitious. Procurement is watching."],
+    [1.0, "Right at the limit. Let go. LET GO."],
+    [1.25, "That's scope creep."],
+    [Infinity, "PUT. IT. DOWN."]
+  ];
+
+  function setBall(x, y, rot) {
+    ball.style.transform = `translate(${x}px, ${y}px) rotate(${rot}deg)`;
+  }
+
+  function resetBall() {
+    ball.classList.remove("launcher-ball-gone");
+    setBall(0, 0, 0);
+  }
+
+  function updateShots() {
+    shotsEl.textContent = shotsLeft === 1 ? "1 shot left" : `${shotsLeft} shots left`;
+    if (shotsLeft <= 0) {
+      plunger.disabled = true;
+      shotsEl.textContent = "no shots left";
+    }
+  }
+
+  function chargeTick() {
+    if (chargeStart == null) return;
+    const charge = (performance.now() - chargeStart) / FULL_CHARGE_MS;
+    const shown = Math.min(charge, POWER_BAR_MAX);
+    powerFill.style.width = `${(shown / POWER_BAR_MAX) * 100}%`;
+    powerFill.classList.toggle("launcher-power-danger", charge > 1);
+    plunger.style.setProperty("--charge", Math.min(charge, 1).toFixed(3));
+    plunger.classList.toggle("launcher-plunger-overcharged", charge > 1);
+    quipEl.textContent = chargeQuips.find(([max]) => charge < max)[1];
+    chargeRaf = requestAnimationFrame(chargeTick);
+  }
+
+  function startCharge(e) {
+    if (flying || shotsLeft <= 0 || chargeStart != null) return;
+    if (e && e.preventDefault) e.preventDefault();
+    if (e && e.pointerId != null && plunger.setPointerCapture) plunger.setPointerCapture(e.pointerId);
+    resetBall();
+    chargeStart = performance.now();
+    plunger.classList.add("launcher-plunger-charging");
+    chargeTick();
+  }
+
+  function release() {
+    if (chargeStart == null) return;
+    const holdMs = performance.now() - chargeStart;
+    chargeStart = null;
+    cancelAnimationFrame(chargeRaf);
+    plunger.classList.remove("launcher-plunger-charging", "launcher-plunger-overcharged");
+    plunger.style.setProperty("--charge", "0");
+    fire(holdMs);
+  }
+
+  function fire(holdMs) {
+    const jitter = (Math.random() * 2 - 1) * JITTER;
+    const result = L.launchResult(holdMs, jitter);
+    shotsLeft--;
+    flying = true;
+    quipEl.textContent = "Negotiating…";
+
+    const range = Math.max(0, line.offsetWidth - ball.offsetWidth);
+    // Overshoots keep rolling past the edge, then drop off the cliff.
+    const target = Math.min(result.distance, 1.3) * range;
+    const duration = 450 + 1000 * Math.sqrt(Math.min(result.distance, 1.3));
+    const t0 = performance.now();
+
+    function frame(now) {
+      const t = Math.min(1, (now - t0) / duration);
+      const eased = result.overshot ? t : 1 - Math.pow(1 - t, 3); // ease-out = friction; overshoots don't slow down
+      const x = eased * target;
+      const past = Math.max(0, x - range);
+      const y = past > 0 ? Math.pow(past, 1.6) * 0.6 : 0; // gravity, roughly
+      setBall(x, y, x * 2.2);
+      if (t < 1) {
+        requestAnimationFrame(frame);
+      } else {
+        if (result.overshot) ball.classList.add("launcher-ball-gone");
+        land(result);
+      }
+    }
+    requestAnimationFrame(frame);
+  }
+
+  function land(result) {
+    flying = false;
+    responseTimeLimitMs = result.seconds * 1000;
+    const mm = Math.floor(result.seconds / 60);
+    const ss = result.seconds % 60;
+    timeEl.textContent = `${mm}:${String(ss).padStart(2, "0")}`;
+    zoneEl.textContent = result.zone.label;
+    document.getElementById("launcher-readout").classList.toggle("launcher-readout-bad", result.overshot);
+    updateShots();
+    quipEl.textContent = shotsLeft > 0
+      ? `${result.zone.quip} Happy? Start the simulation, or fire again.`
+      : `${result.zone.quip} That's your rate card now — no more renegotiation.`;
+    startBtn.disabled = false;
+    startBtn.removeAttribute("title");
+  }
+
+  plunger.addEventListener("pointerdown", startCharge);
+  plunger.addEventListener("pointerup", release);
+  plunger.addEventListener("pointercancel", release);
+  plunger.addEventListener("lostpointercapture", release);
+  plunger.addEventListener("contextmenu", (e) => e.preventDefault()); // long-press on touch devices
+  plunger.addEventListener("keydown", (e) => {
+    if ((e.key === " " || e.key === "Enter") && !e.repeat) startCharge(e);
+  });
+  plunger.addEventListener("keyup", (e) => {
+    if (e.key === " " || e.key === "Enter") release();
+  });
+  updateShots();
+})();
+
 // --- Sending a response ---
 document.getElementById("btn-send").addEventListener("click", sendResponse);
 document.getElementById("player-input").addEventListener("keydown", (e) => {
@@ -443,7 +697,7 @@ async function sendResponse() {
 
   // The player just replied — pause their clock while we wait on a
   // response, then restart it once it's their turn again (below).
-  s.deadline = null;
+  s.remainingMs = null;
   if (idx === state.activeStakeholder) updateResponseTimerDisplay();
 
   logAction(`Responded to ${s.name}`);
@@ -455,8 +709,13 @@ async function sendResponse() {
     const moodDelta = await getReplyAndDelta(text, idx);
     if (typeof moodDelta === "number") {
       s.mood = Math.max(-50, Math.min(50, s.mood + moodDelta));
+      if (idx === state.activeStakeholder) {
+        if (moodDelta > 0) triggerAvatarReaction(idx, "nod");
+        else if (moodDelta < 0) triggerAvatarReaction(idx, "shake");
+        refreshActiveAvatarFace();
+      }
     }
-    if (s.status === "active") s.deadline = Date.now() + RESPONSE_TIME_LIMIT_MS;
+    if (s.status === "active") s.remainingMs = responseTimeLimitMs;
     if (idx === state.activeStakeholder) updateResponseTimerDisplay();
     fireDueEvents();
     return;
@@ -484,7 +743,7 @@ async function sendResponse() {
       fireDueEvents();
     }, 500);
   } else {
-    s.deadline = Date.now() + RESPONSE_TIME_LIMIT_MS;
+    s.remainingMs = responseTimeLimitMs;
     if (idx === state.activeStakeholder) updateResponseTimerDisplay();
     fireDueEvents();
   }
@@ -526,6 +785,10 @@ function fireEvent(event) {
     if (!s.noScoring && event.confidenceShift) {
       s.confidence = Math.max(0, Math.min(100, s.confidence + event.confidenceShift));
       updateSentimentRow(idx);
+      if (idx === state.activeStakeholder) {
+        triggerAvatarReaction(idx, event.confidenceShift > 0 ? "nod" : "shake");
+        refreshActiveAvatarFace();
+      }
     }
   });
   updateConfidenceMeter();
@@ -664,10 +927,19 @@ function applyConfidenceDelta(idx, delta) {
   if (idx === state.activeStakeholder) updateConfidenceMeter();
 
   const { winThreshold, loseThreshold, lossGraceMessages } = rules();
-  if (s.confidence >= winThreshold) return "won";
-
   const pastGrace = s.messageCount >= lossGraceMessages;
   const droppedToOrBelowThreshold = s.confidence <= loseThreshold && s.confidence < previousConfidence;
+
+  const willConclude = s.confidence >= winThreshold || (pastGrace && droppedToOrBelowThreshold);
+  if (idx === state.activeStakeholder) {
+    // A nod/shake here only when this exchange DOESN'T end the conversation
+    // outright — concludeConversation plays its own cheer/rage reaction for
+    // that, so this avoids double-animating on the same turn.
+    if (!willConclude && delta !== 0) triggerAvatarReaction(idx, delta > 0 ? "nod" : "shake");
+    refreshActiveAvatarFace();
+  }
+
+  if (s.confidence >= winThreshold) return "won";
   if (pastGrace && droppedToOrBelowThreshold) return "lost";
 
   return null;
@@ -676,9 +948,14 @@ function applyConfidenceDelta(idx, delta) {
 function concludeConversation(idx, outcome) {
   const s = stakeholders[idx];
   s.status = outcome; // "won" | "lost"
-  s.deadline = null;
+  s.remainingMs = null;
   updateSentimentRow(idx);
   logAction(`Conversation with ${s.name} ended — ${outcome === "won" ? "Won" : "Lost"}`);
+
+  if (idx === state.activeStakeholder) {
+    triggerAvatarReaction(idx, outcome === "lost" ? "rage" : "cheer");
+    refreshActiveAvatarFace();
+  }
 
   if (outcome === "lost") {
     // Losing any one SCORED stakeholder ends the whole round — game over.
@@ -689,7 +966,7 @@ function concludeConversation(idx, outcome) {
     stakeholders.forEach((other, otherIdx) => {
       if (otherIdx !== idx && !other.noScoring && other.status === "active") {
         other.status = "lost";
-        other.deadline = null;
+        other.remainingMs = null;
         updateSentimentRow(otherIdx);
       }
     });
@@ -722,39 +999,51 @@ function checkRoundComplete() {
 function startAllTimersIfNeeded() {
   if (state.timersStarted) return;
   state.timersStarted = true;
-  const now = Date.now();
+  // Every stakeholder's clock is armed with a full window, but — see
+  // tickTimers below — only the one currently on screen actually counts
+  // down. The rest stay frozen at this value until the player switches to
+  // them for the first time.
   stakeholders.forEach((s) => {
-    if (s.status === "active") s.deadline = now + RESPONSE_TIME_LIMIT_MS;
+    if (s.status === "active") s.remainingMs = responseTimeLimitMs;
   });
   updateResponseTimerDisplay();
 }
 
-// Runs every second in the background for ALL FOUR conversations at once,
-// not just whichever one is on screen — switching away doesn't stop anyone's
-// clock. Each stakeholder's own deadline is an absolute timestamp, so this
-// is accurate regardless of how often (or rarely) it's checked.
+// Runs every second, but only ever touches the ACTIVE conversation's clock.
+// The other three stakeholders' remainingMs is left exactly where it was —
+// switching away freezes a conversation's countdown, switching back resumes
+// it from the same point, and nothing can time out in the background.
 function tickTimers() {
   if (!state.timersStarted) return;
-  const now = Date.now();
-  stakeholders.forEach((s, idx) => {
-    if (s.status !== "active" || s.deadline == null) return;
-    if (now >= s.deadline) handleResponseTimeout(idx);
-  });
-  updateResponseTimerDisplay();
+  const idx = state.activeStakeholder;
+  const s = stakeholders[idx];
+  if (s.status !== "active" || s.remainingMs == null) return;
+
+  s.remainingMs -= 1000;
+  if (s.remainingMs <= 0) {
+    handleResponseTimeout(idx);
+  } else {
+    updateResponseTimerDisplay();
+  }
 }
 
 setInterval(tickTimers, 1000);
 
 function handleResponseTimeout(idx) {
   const s = stakeholders[idx];
-  s.deadline = null;
+  s.remainingMs = null;
   logAction(`${s.name} grew impatient waiting for a response`);
 
   if (s.noScoring) {
     s.mood = Math.max(-50, Math.min(50, s.mood + TIMEOUT_MOOD_PENALTY));
     appendMessage(idx, s.timeoutLine, "assistant");
-    s.deadline = Date.now() + RESPONSE_TIME_LIMIT_MS; // no hard fail — just a fresh window
-    if (idx === state.activeStakeholder) updateComposerAndBanner();
+    s.remainingMs = responseTimeLimitMs; // no hard fail — just a fresh window
+    if (idx === state.activeStakeholder) {
+      triggerAvatarReaction(idx, "shake");
+      refreshActiveAvatarFace();
+      updateComposerAndBanner();
+      updateResponseTimerDisplay();
+    }
     return;
   }
 
@@ -764,7 +1053,8 @@ function handleResponseTimeout(idx) {
   if (pendingEnding) {
     concludeConversation(idx, pendingEnding);
   } else if (s.status === "active") {
-    s.deadline = Date.now() + RESPONSE_TIME_LIMIT_MS;
+    s.remainingMs = responseTimeLimitMs;
+    updateResponseTimerDisplay();
   }
 }
 
@@ -773,18 +1063,18 @@ function updateResponseTimerDisplay() {
   const el = document.getElementById("response-timer");
   if (!el) return;
 
-  if (!state.timersStarted || s.deadline == null || s.status !== "active") {
+  if (!state.timersStarted || s.remainingMs == null || s.status !== "active") {
     el.hidden = true;
     el.classList.remove("response-timer-urgent");
     return;
   }
 
-  const totalSeconds = Math.max(0, Math.ceil((s.deadline - Date.now()) / 1000));
+  const totalSeconds = Math.max(0, Math.ceil(s.remainingMs / 1000));
   const mm = Math.floor(totalSeconds / 60);
   const ss = totalSeconds % 60;
   el.textContent = `⏱ ${mm}:${String(ss).padStart(2, "0")}`;
   el.hidden = false;
-  el.classList.toggle("response-timer-urgent", totalSeconds <= RESPONSE_TIME_URGENT_SECONDS);
+  el.classList.toggle("response-timer-urgent", totalSeconds <= responseUrgentSeconds());
 }
 
 function labelForStakeholder(s) {
