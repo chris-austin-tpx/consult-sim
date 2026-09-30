@@ -1,12 +1,12 @@
 // ConsultSim — prototype logic.
-// All three stakeholders are backed by the local Node/Gemini backend
-// (server.js) via their `key`, falling back to their own canned replies
-// if a request fails. Each stakeholder tracks its own confidence score,
-// conversation transcript and win/lost status, all persisted across
-// switching between stakeholders until "Restart Simulation" is pressed.
-
-const WIN_THRESHOLD = 80;
-const LOSE_THRESHOLD = 30;
+// The player picks a scenario (level) from the server's list; everything
+// about it — briefing, cast, rules, mid-round events — comes from that
+// scenario's JSON (see scenarios/ and lib/scenarios.js). Every stakeholder
+// is backed by the local Node/Gemini backend (server.js) via their `key`,
+// falling back to their own canned replies if a request fails. Each
+// stakeholder tracks its own confidence score, conversation transcript and
+// win/lost status, all persisted across switching between stakeholders
+// until the scenario is restarted.
 
 // Simple, deliberately blunt detector for outright insults/abuse directed
 // at a stakeholder. Checked locally (no API call) so an obviously
@@ -32,90 +32,9 @@ function isOutrageous(text) {
   return INSULT_PATTERNS.some((re) => re.test(text));
 }
 
-const stakeholders = [
-  {
-    key: "jenny",
-    initials: "JM",
-    name: "Jenny Mensah",
-    role: "Chief Financial Officer",
-    avatarClass: "avatar-1",
-    opener:
-      "Good morning. Before we go further — I need to understand how you're going to guarantee " +
-      "month-end close drops from 9 days to 3. The board is asking me for a date, and I don't " +
-      "have one to give them yet.",
-    replies: [
-      "I hear you, but I need specifics, not reassurance. What's the actual plan?",
-      "Alright — that's a clearer answer than I expected. Put it in writing for the board pack.",
-      "Noted. I'll hold you to that timeline.",
-      "That's useful context. Keep me posted on the Finance pilot progress."
-    ],
-    insultLine:
-      "Excuse me? I won't be spoken to like that. This meeting is over — I'll be raising this with your engagement lead.",
-    winLine: "You've clearly got a handle on this. I'm satisfied — let's move forward.",
-    loseLine: "I don't think this is working. I need to escalate this internally.",
-    startConfidence: 50
-  },
-  {
-    key: "david",
-    initials: "DK",
-    name: "David Kowalski",
-    role: "Head of IT Infrastructure",
-    avatarClass: "avatar-2",
-    opener:
-      "Look, I've been managing this environment for eleven years. I'm not against change, but " +
-      "I need to know my team isn't going to get steamrolled by a migration plan we had no say in.",
-    replies: [
-      "That's the kind of thing I was worried you'd say. My team needs to be involved from day one.",
-      "Okay. If you genuinely mean that, I can work with it.",
-      "Fine — but I want a named point of contact on your side, not a rotating cast.",
-      "That actually addresses my concern. Thank you for being straight with me."
-    ],
-    insultLine: "That's completely out of line. We're done here.",
-    winLine: "Alright, I'm convinced. You've got my team's backing.",
-    loseLine: "I'm not comfortable continuing this conversation — I'll be flagging this up.",
-    startConfidence: 35
-  },
-  {
-    key: "priya",
-    initials: "PA",
-    name: "Priya Anand",
-    role: "Finance Operations Manager",
-    avatarClass: "avatar-3",
-    opener:
-      "Honestly, I want this to work — our current reporting process is painful. But my team is " +
-      "buried during month-end close. If UAT lands in that window, we simply won't have capacity.",
-    replies: [
-      "I appreciate you saying that, but 'we'll try to work around it' isn't a commitment.",
-      "Okay, that sounds workable. Can you confirm the UAT window in writing?",
-      "That would genuinely help. Thank you for listening.",
-      "Good — let's make sure that's reflected in the project plan."
-    ],
-    insultLine: "I don't have to put up with that. This conversation is over.",
-    winLine: "This is exactly the kind of clarity I needed. I'm on board.",
-    loseLine: "I can't keep going around in circles like this. I need to step back from this conversation.",
-    startConfidence: 65
-  },
-  {
-    key: "ben",
-    initials: "BC",
-    name: "Ben Carter",
-    role: "Junior Developer",
-    avatarClass: "avatar-4",
-    // No scoring for this conversation — no confidence bar, no win/loss, no
-    // hard fail. It's a supportive check-in, assessed qualitatively only.
-    noScoring: true,
-    opener:
-      "Hey — have you got a minute? I don't really know who else to ask about this... I've been " +
-      "staring at the Databricks notebooks for two days and I still don't feel like I understand " +
-      "what I'm doing. I don't want to let the team down but I'm honestly a bit overwhelmed.",
-    replies: [
-      "Yeah... thanks, that actually helps a bit.",
-      "I guess I just didn't want to look like I couldn't handle it.",
-      "Okay. I think I can try that.",
-      "Thanks for listening — I mean it."
-    ]
-  }
-];
+// The chosen scenario's cast, with runtime state layered on by
+// initStakeholderRuntimeState. Empty until a scenario is picked.
+let stakeholders = [];
 
 function initStakeholderRuntimeState(s) {
   s.confidence = s.startConfidence;
@@ -124,26 +43,30 @@ function initStakeholderRuntimeState(s) {
   s.status = "active";
   s.transcript = [{ role: "assistant", text: s.opener, speaker: s.name }];
   s.replyIndex = 0;
-  s.messageCount = 0; // player messages sent — used for the grace period below
+  // Player messages sent — used for the grace period: a stakeholder can't be
+  // lost on confidence alone until the player has had rules.lossGraceMessages
+  // messages to recover, so one rough answer doesn't end the whole round
+  // outright. Insults are exempt: those end things immediately regardless of
+  // grace, since that's a deliberate, unambiguous action.
+  s.messageCount = 0;
   s.mood = 0; // noScoring only: silent running emotional trend, never displayed live
   s.review = null; // { headline, notes } once this conversation's quick review has loaded
 }
 
-// A stakeholder can't be lost on confidence alone until the player has had
-// at least this many messages to recover — one rough answer shouldn't end
-// the whole round outright. Insults are exempt: those end things immediately
-// regardless of grace, since that's a deliberate, unambiguous action.
-const LOSS_GRACE_MESSAGES = 2;
-
-stakeholders.forEach(initStakeholderRuntimeState);
-
 // Mutable simulation state
 const state = {
+  scenario: null, // the chosen scenario, as served by GET /api/scenarios/:id
   activeStakeholder: 0,
   actionCount: 0,
+  playerTurns: 0, // messages sent to anyone — what scenario events are timed against
+  firedEvents: [], // ids of scenario events that have already happened this round
   roundStatus: "active", // "active" | "gameover" — losing ANY stakeholder ends the whole round
   gameOverStakeholder: null
 };
+
+function rules() {
+  return state.scenario.rules;
+}
 
 function show(screenId) {
   document.querySelectorAll(".screen").forEach(s => s.classList.remove("active"));
@@ -151,8 +74,15 @@ function show(screenId) {
 }
 
 // --- Navigation wiring ---
-document.getElementById("btn-start").addEventListener("click", () => show("screen-briefing"));
-document.getElementById("btn-back-welcome").addEventListener("click", () => show("screen-welcome"));
+document.getElementById("btn-start").addEventListener("click", () => {
+  show("screen-levels");
+  loadLevels();
+});
+document.getElementById("btn-levels-back").addEventListener("click", () => show("screen-welcome"));
+document.getElementById("btn-back-welcome").addEventListener("click", () => {
+  show("screen-levels");
+  loadLevels();
+});
 document.getElementById("btn-to-stakeholders").addEventListener("click", () => show("screen-stakeholders"));
 document.getElementById("btn-back-briefing").addEventListener("click", () => show("screen-briefing"));
 document.getElementById("btn-to-simulation").addEventListener("click", () => show("screen-simulation"));
@@ -164,6 +94,10 @@ document.getElementById("btn-view-feedback").addEventListener("click", () => {
 });
 document.getElementById("btn-feedback-back").addEventListener("click", () => show("screen-simulation"));
 document.getElementById("btn-feedback-restart").addEventListener("click", restartSimulation);
+document.getElementById("btn-feedback-levels").addEventListener("click", () => {
+  show("screen-levels");
+  loadLevels();
+});
 document.getElementById("btn-retry-feedback").addEventListener("click", loadFeedback);
 document.getElementById("btn-end-checkin").addEventListener("click", endCheckin);
 document.getElementById("btn-view-progress").addEventListener("click", () => {
@@ -171,6 +105,167 @@ document.getElementById("btn-view-progress").addEventListener("click", () => {
   loadProgress();
 });
 document.getElementById("btn-progress-back").addEventListener("click", () => show("screen-welcome"));
+
+// ---------------------------------------------------------------------------
+// Scenario selection and rendering — everything scenario-specific on the
+// briefing, stakeholder and simulation screens is built from the scenario
+// data here, rather than written into index.html.
+// ---------------------------------------------------------------------------
+
+function stars(difficulty) {
+  return "★".repeat(difficulty) + "☆".repeat(Math.max(0, 5 - difficulty));
+}
+
+async function loadLevels() {
+  const container = document.getElementById("level-list");
+  container.innerHTML = "";
+  container.appendChild(el("p", "progress-status", "Loading scenarios…"));
+
+  try {
+    const response = await fetch("/api/scenarios");
+    const data = await response.json();
+    if (!response.ok || !data.ok) throw new Error(data.error || "Request failed");
+
+    container.innerHTML = "";
+    if (!data.scenarios.length) {
+      container.appendChild(el("p", "progress-status", "No scenarios are available — check the server log."));
+      return;
+    }
+    data.scenarios.forEach((scenario) => container.appendChild(renderLevelCard(scenario)));
+  } catch (err) {
+    console.warn("Could not load scenarios:", err.message || err);
+    container.innerHTML = "";
+    container.appendChild(el("p", "progress-status", "Could not load scenarios right now."));
+  }
+}
+
+function renderLevelCard(scenario) {
+  const card = el("div", "card level-card");
+  card.appendChild(el("div", "level-stars", stars(scenario.difficulty)));
+  card.appendChild(el("h3", null, scenario.title));
+  card.appendChild(el("div", "role", scenario.projectName));
+  card.appendChild(el("p", "level-summary", scenario.summary));
+
+  let record = "Not attempted yet";
+  if (scenario.attempts) {
+    record = `${scenario.attempts} attempt${scenario.attempts === 1 ? "" : "s"}`;
+    if (scenario.bestLevel) record += ` · Best: ${scenario.bestLevel}`;
+  }
+  const meta = el("div", "level-meta", record);
+  if (scenario.cleared) meta.appendChild(el("span", "attempt-badge attempt-badge-won", "Cleared"));
+  card.appendChild(meta);
+
+  const playBtn = el("button", "btn btn-primary", scenario.attempts ? "Play Again" : "Play");
+  playBtn.addEventListener("click", () => startScenario(scenario.id, playBtn));
+  card.appendChild(playBtn);
+  return card;
+}
+
+async function startScenario(id, button) {
+  if (button) button.disabled = true;
+  try {
+    const response = await fetch(`/api/scenarios/${encodeURIComponent(id)}`);
+    const data = await response.json();
+    if (!response.ok || !data.ok) throw new Error(data.error || "Request failed");
+
+    state.scenario = data.scenario;
+    renderScenarioScreens();
+    resetRound();
+    show("screen-briefing");
+  } catch (err) {
+    console.warn("Could not load scenario:", err.message || err);
+    alert("Couldn't load that scenario right now — please try again.");
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+function renderScenarioScreens() {
+  const sc = state.scenario;
+  const display = sc.briefing.display;
+
+  document.getElementById("briefing-stars").textContent = stars(sc.difficulty);
+  document.getElementById("briefing-title").textContent = `${sc.projectName} — ${sc.title}`;
+  document.getElementById("briefing-summary").textContent = sc.summary;
+
+  const objectives = document.getElementById("briefing-objectives");
+  objectives.innerHTML = "";
+  display.objectives.forEach((text) => objectives.appendChild(el("li", null, text)));
+
+  const timeline = document.getElementById("briefing-timeline");
+  timeline.innerHTML = "";
+  (display.timeline || []).forEach((item) => {
+    const row = el("div", "timeline-item");
+    row.appendChild(el("span", "timeline-date", item.when));
+    row.appendChild(el("span", "timeline-desc", item.what));
+    timeline.appendChild(row);
+  });
+  const deadline = document.getElementById("briefing-deadline");
+  deadline.textContent = display.deadlineNote || "";
+  deadline.hidden = !display.deadlineNote;
+  document.getElementById("briefing-timeline-card").hidden = !(display.timeline || []).length && !display.deadlineNote;
+
+  const risks = document.getElementById("briefing-risks");
+  risks.innerHTML = "";
+  (display.risks || []).forEach((risk) => {
+    const item = el("div", `risk-item risk-${risk.level}`);
+    item.appendChild(el("span", "risk-label", risk.level[0].toUpperCase() + risk.level.slice(1)));
+    item.appendChild(el("p", null, risk.text));
+    risks.appendChild(item);
+  });
+  document.getElementById("briefing-risks-card").hidden = !(display.risks || []).length;
+
+  const grid = document.getElementById("stakeholder-grid");
+  grid.innerHTML = "";
+  sc.stakeholders.forEach((s) => grid.appendChild(renderStakeholderCard(s)));
+
+  const switcher = document.getElementById("stakeholder-switcher");
+  switcher.innerHTML = "";
+  sc.stakeholders.forEach((s, idx) => {
+    const btn = el("button", "switch-btn", s.initials);
+    btn.dataset.stakeholder = idx;
+    btn.title = s.name;
+    switcher.appendChild(btn);
+  });
+
+  const sentiment = document.getElementById("sentiment-rows");
+  sentiment.innerHTML = "";
+  sc.stakeholders.forEach((s, idx) => {
+    if (s.noScoring) return;
+    const row = el("div", "sentiment-row");
+    row.dataset.idx = idx;
+    row.appendChild(el("span", "sentiment-name", s.name));
+    row.appendChild(el("span", "sentiment-tag"));
+    sentiment.appendChild(row);
+  });
+
+  document.getElementById("status-phase").textContent = sc.phase;
+
+  const openRisks = document.getElementById("status-risks");
+  openRisks.innerHTML = "";
+  sc.openRisks.forEach((text) => openRisks.appendChild(el("li", null, text)));
+  document.getElementById("status-risks-block").hidden = !sc.openRisks.length;
+}
+
+function renderStakeholderCard(s) {
+  const card = el("div", "stakeholder-card" + (s.noScoring ? " stakeholder-card-support" : ""));
+  card.appendChild(el("div", `avatar ${s.avatarClass}`, s.initials));
+  card.appendChild(el("h3", null, s.name));
+  card.appendChild(el("div", "role", s.role));
+
+  const addLine = (cls, label, text) => {
+    if (!text) return;
+    const p = el("p", cls);
+    p.appendChild(el("strong", null, `${label}:`));
+    p.appendChild(document.createTextNode(` ${text}`));
+    card.appendChild(p);
+  };
+  const cardText = s.card || {};
+  addLine("personality", "Personality", cardText.personality);
+  addLine("motivation", "Motivation", cardText.motivation);
+  addLine("motivation", "Note", cardText.note);
+  return card;
+}
 
 function endCheckin() {
   const idx = state.activeStakeholder;
@@ -184,14 +279,19 @@ function endCheckin() {
 }
 
 // --- Stakeholder switching ---
-document.querySelectorAll(".switch-btn").forEach(btn => {
-  btn.addEventListener("click", () => {
-    document.querySelectorAll(".switch-btn").forEach(b => b.classList.remove("active"));
-    btn.classList.add("active");
-    state.activeStakeholder = parseInt(btn.dataset.stakeholder, 10);
-    renderActiveStakeholder();
-  });
+document.getElementById("stakeholder-switcher").addEventListener("click", (e) => {
+  const btn = e.target.closest(".switch-btn");
+  if (!btn) return;
+  state.activeStakeholder = parseInt(btn.dataset.stakeholder, 10);
+  highlightActiveSwitch();
+  renderActiveStakeholder();
 });
+
+function highlightActiveSwitch() {
+  document.querySelectorAll(".switch-btn").forEach((b) => {
+    b.classList.toggle("active", parseInt(b.dataset.stakeholder, 10) === state.activeStakeholder);
+  });
+}
 
 function renderActiveStakeholder() {
   const s = stakeholders[state.activeStakeholder];
@@ -216,6 +316,18 @@ function renderActiveStakeholder() {
 // Satish — chimes in, to keep the common single-speaker case uncluttered.
 function renderMessageBubble(text, role, speaker, primaryName) {
   const messages = document.getElementById("messages");
+
+  // Scenario events (e.g. "go-live has moved") are narration, not dialogue —
+  // shown as a centred notice in every conversation.
+  if (role === "event") {
+    const notice = document.createElement("div");
+    notice.className = "message message-event";
+    notice.textContent = text;
+    messages.appendChild(notice);
+    messages.scrollTop = messages.scrollHeight;
+    return;
+  }
+
   const wrapper = document.createElement("div");
   wrapper.className = "message " + (role === "assistant" ? "message-them" : "message-me");
 
@@ -309,6 +421,7 @@ async function sendResponse() {
 
   appendMessage(idx, text, "user");
   input.value = "";
+  state.playerTurns++;
 
   logAction(`Responded to ${s.name}`);
 
@@ -320,6 +433,7 @@ async function sendResponse() {
     if (typeof moodDelta === "number") {
       s.mood = Math.max(-50, Math.min(50, s.mood + moodDelta));
     }
+    fireDueEvents();
     return;
   }
 
@@ -342,8 +456,52 @@ async function sendResponse() {
     setTimeout(() => {
       appendMessage(idx, pendingEnding === "won" ? s.winLine : s.loseLine, "assistant");
       concludeConversation(idx, pendingEnding);
+      fireDueEvents();
     }, 500);
+  } else {
+    fireDueEvents();
   }
+}
+
+// ---------------------------------------------------------------------------
+// Scenario events — mid-round twists (a deadline pulled forward, an incident)
+// that fire once the player has sent `afterTurns` messages in total, across
+// every conversation. An event posts a notice into every transcript, lets
+// named stakeholders react in their own conversation, optionally knocks
+// every still-active client's confidence, and from then on is included in
+// each character's briefing server-side (via projectState.firedEvents).
+// ---------------------------------------------------------------------------
+
+function fireDueEvents() {
+  if (state.roundStatus === "gameover") return;
+  state.scenario.events
+    .filter((event) => !state.firedEvents.includes(event.id) && state.playerTurns >= event.afterTurns)
+    .forEach(fireEvent);
+}
+
+function fireEvent(event) {
+  state.firedEvents.push(event.id);
+  logAction(`Development: ${event.text}`);
+
+  const list = document.getElementById("status-events");
+  list.appendChild(el("li", null, event.text));
+  document.getElementById("status-events-block").hidden = false;
+
+  stakeholders.forEach((s, idx) => {
+    appendMessage(idx, event.text, "event");
+    if (s.status !== "active") return;
+
+    const reaction = event.reactions[s.key];
+    if (reaction) appendMessage(idx, reaction, "assistant");
+
+    // Deliberately bypasses applyConfidenceDelta: news landing shouldn't
+    // lose the conversation by itself — the player gets to respond first.
+    if (!s.noScoring && event.confidenceShift) {
+      s.confidence = Math.max(0, Math.min(100, s.confidence + event.confidenceShift));
+      updateSentimentRow(idx);
+    }
+  });
+  updateConfidenceMeter();
 }
 
 function sendCannedReply(idx) {
@@ -374,14 +532,17 @@ async function getReplyAndDelta(message, idx) {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
+        scenarioId: state.scenario.id,
         stakeholder: s.key,
         message,
         // Exclude the scripted opener (transcript[0]) from the context sent
-        // to Gemini — only actual exchanged turns count as history.
-        history: s.transcript.slice(1),
+        // to Gemini — only actual exchanged turns count as history. Event
+        // notices are left out too: the server adds fired events to the
+        // character's briefing instead, which is where they belong.
+        history: s.transcript.slice(1).filter((m) => m.role !== "event"),
         projectState: {
-          phase: "Discovery — Week 2 of 20",
-          confidence: s.confidence
+          confidence: s.confidence,
+          firedEvents: state.firedEvents
         }
       })
     });
@@ -459,7 +620,7 @@ function computeDelta(text) {
 // (and the main meter if they're the active stakeholder), and returns
 // "won" / "lost" if this change just crossed a threshold, else null.
 //
-// Losing below LOSE_THRESHOLD is momentum-based, not a flat floor: once past
+// Losing below rules().loseThreshold is momentum-based, not a flat floor: once past
 // the grace period, a message only loses the conversation if confidence
 // actually DROPPED and landed at or below the threshold — whether that's
 // falling from above the line, or falling further while already below it.
@@ -475,10 +636,11 @@ function applyConfidenceDelta(idx, delta) {
   updateSentimentRow(idx);
   if (idx === state.activeStakeholder) updateConfidenceMeter();
 
-  if (s.confidence >= WIN_THRESHOLD) return "won";
+  const { winThreshold, loseThreshold, lossGraceMessages } = rules();
+  if (s.confidence >= winThreshold) return "won";
 
-  const pastGrace = s.messageCount >= LOSS_GRACE_MESSAGES;
-  const droppedToOrBelowThreshold = s.confidence <= LOSE_THRESHOLD && s.confidence < previousConfidence;
+  const pastGrace = s.messageCount >= lossGraceMessages;
+  const droppedToOrBelowThreshold = s.confidence <= loseThreshold && s.confidence < previousConfidence;
   if (pastGrace && droppedToOrBelowThreshold) return "lost";
 
   return null;
@@ -527,9 +689,8 @@ function labelForStakeholder(s) {
 }
 
 function updateSentimentRow(idx) {
-  const rows = document.querySelectorAll(".sentiment-row");
-  const row = rows[idx];
-  if (!row) return;
+  const row = document.querySelector(`.sentiment-row[data-idx="${idx}"]`);
+  if (!row) return; // noScoring stakeholders have no sentiment row
   const tag = row.querySelector(".sentiment-tag");
   const label = labelForStakeholder(stakeholders[idx]);
   tag.textContent = label.text;
@@ -541,7 +702,7 @@ function captionForStakeholder(s) {
   if (s.status === "lost") return "Conversation lost — replay to try again";
   if (s.confidence >= 65) return "Confident — the client trusts your direction";
   if (s.confidence >= 45) return "Cautiously optimistic";
-  if (s.confidence > LOSE_THRESHOLD) return "Uncertain — the client has doubts";
+  if (s.confidence > rules().loseThreshold) return "Uncertain — the client has doubts";
   return "At risk — confidence is critically low";
 }
 
@@ -644,17 +805,24 @@ function logAction(text) {
   log.prepend(item);
 }
 
-function restartSimulation() {
+// Starts the current scenario afresh — used both when a scenario is first
+// picked and when the player restarts or replays it.
+function resetRound() {
   state.activeStakeholder = 0;
   state.actionCount = 0;
+  state.playerTurns = 0;
+  state.firedEvents = [];
   state.roundStatus = "active";
   state.gameOverStakeholder = null;
+  // Fresh copies, so runtime state never leaks back into the scenario data.
+  stakeholders = state.scenario.stakeholders.map((s) => ({ ...s }));
   stakeholders.forEach(initStakeholderRuntimeState);
 
-  document.querySelectorAll(".switch-btn").forEach(b => b.classList.remove("active"));
-  document.querySelector('.switch-btn[data-stakeholder="0"]').classList.add("active");
-
+  highlightActiveSwitch();
   stakeholders.forEach((_, idx) => updateSentimentRow(idx));
+
+  document.getElementById("status-events").innerHTML = "";
+  document.getElementById("status-events-block").hidden = true;
 
   const log = document.getElementById("action-log");
   log.innerHTML = '<li class="log-empty">No actions taken yet.</li>';
@@ -664,8 +832,12 @@ function restartSimulation() {
   document.getElementById("feedback-error").hidden = true;
   document.getElementById("feedback-loading").hidden = true;
 
-  show("screen-simulation");
   renderActiveStakeholder();
+}
+
+function restartSimulation() {
+  resetRound();
+  show("screen-simulation");
 }
 
 // ---------------------------------------------------------------------------
@@ -675,7 +847,10 @@ function restartSimulation() {
 
 function buildStakeholderSummary(idx) {
   const s = stakeholders[idx];
-  const lines = s.transcript.map((m) => `${m.role === "assistant" ? (m.speaker || s.name) : "Consultant"}: ${m.text}`);
+  const lines = s.transcript.map((m) => {
+    if (m.role === "event") return `[EVENT] ${m.text}`;
+    return `${m.role === "assistant" ? (m.speaker || s.name) : "Consultant"}: ${m.text}`;
+  });
 
   if (s.noScoring) {
     return (
@@ -713,6 +888,7 @@ async function requestConversationReview(idx, outcome) {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
+        scenarioId: state.scenario.id,
         stakeholder: s.key,
         outcome,
         transcriptSummary: buildStakeholderSummary(idx),
@@ -745,7 +921,7 @@ async function loadFeedback() {
     const response = await fetch("/api/feedback", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sessionSummary: buildSessionSummary() })
+      body: JSON.stringify({ scenarioId: state.scenario.id, sessionSummary: buildSessionSummary() })
     });
 
     const data = await response.json();
@@ -757,6 +933,12 @@ async function loadFeedback() {
     document.getElementById("feedback-summary").textContent = data.summary;
     document.getElementById("feedback-next-level").textContent = data.nextLevelFocus;
     document.getElementById("feedback-support-notes").textContent = data.psychologicalSafetyNotes;
+    const supporter = stakeholders.find((s) => s.noScoring);
+    document.getElementById("feedback-support-card").hidden = !supporter;
+    if (supporter) {
+      document.getElementById("feedback-support-heading").textContent =
+        `Supporting ${supporter.name.split(" ")[0]} (Psychological Safety)`;
+    }
 
     const strengthsList = document.getElementById("feedback-strengths");
     strengthsList.innerHTML = "";
@@ -794,6 +976,7 @@ async function loadFeedback() {
 async function saveAttempt(feedbackData) {
   try {
     const record = {
+      scenarioId: state.scenario.id,
       level: feedbackData.level,
       summary: feedbackData.summary,
       strengths: feedbackData.strengths,
@@ -848,6 +1031,8 @@ function renderAttemptCard(attempt) {
 
   const header = el("div", "attempt-header");
   header.appendChild(el("span", "attempt-level", attempt.level || "Unrated"));
+  // Attempts saved before levels existed were all the original kickoff.
+  header.appendChild(el("span", "attempt-scenario", attempt.scenarioTitle || "Kickoff"));
   const date = attempt.timestamp
     ? new Date(attempt.timestamp).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })
     : "";
@@ -883,7 +1068,9 @@ function renderAttemptCard(attempt) {
     addSection("To Reach the Next Level", el("p", null, attempt.nextLevelFocus));
   }
   if (attempt.psychologicalSafetyNotes) {
-    addSection("Supporting Ben (Psychological Safety)", el("p", null, attempt.psychologicalSafetyNotes));
+    const supporter = (attempt.stakeholders || []).find((s) => s.noScoring);
+    const heading = supporter ? `Supporting ${supporter.name.split(" ")[0]}` : "Supporting a Colleague";
+    addSection(`${heading} (Psychological Safety)`, el("p", null, attempt.psychologicalSafetyNotes));
   }
 
   detailsBtn.addEventListener("click", () => {
@@ -925,7 +1112,3 @@ async function loadProgress() {
     container.appendChild(el("p", "progress-status", "Could not load your history right now."));
   }
 }
-
-// Initial render
-stakeholders.forEach((_, idx) => updateSentimentRow(idx));
-renderActiveStakeholder();

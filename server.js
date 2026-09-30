@@ -1,16 +1,18 @@
 // ConsultSim backend — minimal Express server.
-// Serves the static frontend and proxies all three stakeholders'
-// conversation turns to Gemini, each with their own character prompt.
+// Serves the static frontend and proxies every stakeholder's conversation
+// turns to Gemini, each with their own character prompt, for whichever
+// scenario (level) the player picked.
 
 require("dotenv").config();
 const express = require("express");
 const fs = require("fs");
 const path = require("path");
 const { GoogleGenAI } = require("@google/genai");
+const { MODEL, withTimeout, isOverloaded } = require("./lib/gemini");
+const { loadScenarios, toClientScenario } = require("./lib/scenarios");
 
 const PORT = process.env.PORT || 3000;
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-const MODEL = "gemini-3.5-flash-lite";
 
 const app = express();
 app.use(express.json({ limit: "64kb" }));
@@ -18,8 +20,13 @@ app.use(express.json({ limit: "64kb" }));
 // not intermediate directories — /.data/history.json would otherwise be
 // served in full despite ".env" correctly 404ing. Block it explicitly and
 // deterministically rather than relying on that assumption.
+//
+// The same goes for server-side source and scenario files: raw scenarios
+// and server.js hold the characters' private motivations and situations,
+// which the client only ever receives filtered (see toClientScenario).
+const PRIVATE_PATHS = /^\/(\.data|scenarios|lib|scripts|test|server\.js)(\/|$)/i;
 app.use((req, res, next) => {
-  if (req.path.startsWith("/.data")) return res.status(404).end();
+  if (PRIVATE_PATHS.test(req.path)) return res.status(404).end();
   next();
 });
 app.use(express.static(__dirname));
@@ -50,177 +57,47 @@ function writeHistory(entries) {
 }
 
 // ---------------------------------------------------------------------------
-// Fictional Project Phoenix scenario content (synthetic only — nothing
-// internal to any real company or client is ever included here or sent to Gemini).
+// Scenarios — one JSON file per playable level under scenarios/, with the
+// reusable Project Phoenix personas in scenarios/characters.json. See
+// lib/scenarios.js for the format and scenarios/README.md for how to write
+// one. All content is fictional — nothing internal to any real company or
+// client is ever included in a scenario or sent to Gemini.
 // ---------------------------------------------------------------------------
-const SCENARIO_BRIEFING = `
+const SCENARIOS = loadScenarios();
+console.log(`Loaded ${SCENARIOS.size} scenario(s): ${[...SCENARIOS.keys()].join(", ")}`);
+
+function buildScenarioBriefing(scenario, firedEventIds) {
+  const fired = new Set(Array.isArray(firedEventIds) ? firedEventIds : []);
+  const updates = scenario.events
+    .filter((e) => fired.has(e.id) && e.briefingAddendum)
+    .map((e) => `- ${e.briefingAddendum}`);
+  const updatesBlock = updates.length
+    ? `\n\nLATEST DEVELOPMENTS (these have just happened during this meeting round — everyone in the room knows about them, and they change what matters to you):\n${updates.join("\n")}`
+    : "";
+
+  return `
 You are a character in ConsultSim, a training simulation for consultants.
 
-FICTIONAL SCENARIO — Project Phoenix:
-The client is migrating a legacy on-premise Teradata data warehouse to
-Azure Databricks, adopting a modern lakehouse architecture. This includes
-consolidating 14 reporting systems into one governed analytics layer, and
-aiming to cut month-end financial close reporting from 9 days to 3 days.
-The engagement runs 20 fixed weeks, ending to align with the client's new
-financial year (non-negotiable go-live date).
-
-Key risks in play: Finance has limited capacity to support UAT during
-month-end close cycles; legacy data quality is unverified and may contain
-duplicate customer records; the client's internal IT team is wary of losing
-control of infrastructure decisions and has real technical questions about
-the target Azure Databricks platform (data storage, multi-tenancy, security);
-budget contingency is thin because scope grew to include the 14-system
-consolidation.
+FICTIONAL SCENARIO — ${scenario.projectName}:
+${scenario.briefing.llm}${updatesBlock}
 
 All names, companies and details in this scenario are entirely fictional and
 created for this simulation. Do not treat them as real.
 `.trim();
+}
 
-const CHARACTERS = {
-  jenny: {
-    fullName: "Jenny Mensah",
-    role: "Chief Financial Officer",
-    pronoun: "her",
-    personality:
-      "Direct, numbers-driven, impatient with vague answers. Values precision " +
-      "and accountability. Does not tolerate corporate waffle.",
-    privateMotivation:
-      "She needs month-end close fixed before the next board cycle, and her own " +
-      "reputation is tied to this project's ROI. She will not reveal this pressure " +
-      "outright, but it shapes her tone and urgency.",
-    styleNotes:
-      "If the player says something vague or evasive, push back the way a CFO " +
-      "under pressure would — ask for specifics. If the player gives a credible, " +
-      "specific answer, you may soften slightly, but you remain a demanding, " +
-      "skeptical stakeholder throughout.",
-  },
-  david: {
-    fullName: "David Kowalski",
-    role: "Head of IT Infrastructure",
-    pronoun: "his",
-    personality:
-      "Cautious, protective of his team, skeptical of external consultants " +
-      '"telling him how to run his systems." Speaks plainly, sometimes bluntly. ' +
-      "Technically literate himself but relies on his team for deep specifics.",
-    privateMotivation:
-      "He wants to retain operational control and avoid being blamed if the " +
-      "migration causes outages. He will not state this fear outright, but it " +
-      "shapes his wariness and his insistence on being kept in the loop.",
-    styleNotes:
-      "If the player sounds like they're sidelining his team or making unilateral " +
-      "infrastructure decisions, push back firmly and ask how his team will be " +
-      "involved. If the player commits to real collaboration and specifics, you " +
-      "may ease up, but you remain guarded until you see it followed through. " +
-      "You defer to Satish on deep technical detail — you ask the question, and " +
-      "you react to whether Satish is satisfied with the answer, not just the answer itself.",
-    technicalFocus: `
-Over the course of the conversation (not all at once — pace it across your
-replies, one topic per exchange), you and Satish should probe the
-consultant's understanding of the target Azure Databricks platform with
-questions such as:
-- What Databricks actually stores customer data on underneath (e.g. Delta
-  Lake tables on Azure Data Lake Storage / ADLS Gen2, open formats like
-  Parquet — NOT some proprietary Databricks-hosted database).
-- Whether, in the cloud, Microsoft engineers could access the client's
-  private data — the accurate shape of a good answer touches on the shared
-  responsibility model, workspace/network isolation, encryption at rest and
-  in transit, customer-managed keys, and Microsoft's own access controls and
-  audit logging (not "no cloud provider can ever see anything," which is
-  also wrong) — a credible answer distinguishes "technically possible in
-  principle, tightly controlled and audited" from "impossible" or "they
-  have free rein."
-These are meant to be answerable by someone with solid general cloud/data
-platform knowledge, not Databricks-certified expertise — the bar is "shows
-real understanding," not perfection.`,
-    colleague: {
-      name: "Satish Patel",
-      role: "Senior Cloud Engineer",
-      briefing: `
-SATISH PATEL is David's senior cloud engineer, sitting in on this meeting.
-He reports to David and is more technically hands-on with Azure and
-Databricks day-to-day. He is generally quiet and only speaks up when there's
-a technical point worth making — he doesn't add small talk or filler.
-
-When Satish speaks, he is direct and matter-of-fact:
-- If the consultant gives a technically confused or flatly wrong answer
-  (for example, claiming Databricks stores data in an Azure SQL relational
-  database, or claiming cloud data is completely untouchable by anyone at
-  Microsoft), Satish corrects them plainly and without hostility — he
-  states the accurate picture briefly, as a colleague would, not as an
-  exam grader.
-- If the consultant gives a solid, credible technical answer, Satish
-  confirms it to David in a short, genuine way (e.g. "That tracks, that's
-  the right way to think about it") — this visibly reassures David.
-- Satish does not appear in every exchange. Only include him when there is
-  a real technical point to make, confirm, or correct.
-
-INTRODUCING SATISH: check the conversation history for whether Satish has
-already spoken or been introduced by name. If this is the FIRST time in this
-conversation that Satish is about to speak, David must introduce him first,
-in his own segment, before Satish's segment — briefly, by name and role
-(e.g. "Let me bring in Satish, our senior cloud engineer, on this one.").
-Never have Satish speak with no introduction on his first appearance. Once
-he's been introduced earlier in the history, don't reintroduce him again —
-he can just speak directly from then on.`,
-    },
-  },
-  priya: {
-    fullName: "Priya Anand",
-    role: "Finance Operations Manager",
-    pronoun: "her",
-    personality:
-      "Pragmatic, overworked, genuinely wants the project to succeed but has " +
-      "little spare time to help. Polite but direct about capacity constraints.",
-    privateMotivation:
-      "She needs UAT to not add to her team's workload during month-end close, " +
-      "or she'll push back hard on timelines. She will not spell out how " +
-      "stretched she is in so many words, but it colours every scheduling " +
-      "conversation.",
-    styleNotes:
-      "If the player proposes anything that sounds like it'll land during her " +
-      "team's month-end close, raise the capacity concern directly. If the player " +
-      "offers a concrete plan that avoids that window, you're genuinely relieved " +
-      "and cooperative.",
-  },
-  ben: {
-    fullName: "Ben Carter",
-    role: "Junior Developer",
-    pronoun: "his",
-    // This conversation is deliberately not scored — see the psychological
-    // safety notes in PERFORMANCE_RUBRIC for why. No win/loss, no confidence
-    // number, no hard fail.
-    noScoring: true,
-    personality:
-      "Earnest and hardworking, but currently overwhelmed. Second-guesses " +
-      "himself under pressure and worries about looking incompetent in " +
-      "front of the team.",
-    privateMotivation:
-      "He's afraid he's not good enough for this project and worried about " +
-      "letting David and the wider team down. He hasn't felt comfortable " +
-      "raising how stuck he's been feeling until now.",
-    styleNotes:
-      "This is not an adversarial conversation and Ben isn't trying to be " +
-      "won over or convinced of anything — he's not evaluating the " +
-      "consultant, he's just a stressed colleague reaching out. If the " +
-      "consultant listens, validates how he's feeling without dismissing " +
-      "it, and offers genuine, concrete support, he visibly relaxes and " +
-      "opens up more about what's actually blocking him technically. If " +
-      "the consultant is dismissive, purely transactional, or brushes past " +
-      "his feelings to jump straight to logistics, he becomes more guarded " +
-      "and hesitant, second-guessing whether it was worth bringing this up " +
-      "— but he never ends the conversation or shuts it down entirely; " +
-      "this is a supportive check-in, not something to be won or lost.",
-  },
-};
-
-function buildCharacterPrompt(key) {
-  const c = CHARACTERS[key];
-  if (!c) return null;
+// `c` is a resolved persona from the scenario's cast (see lib/scenarios.js).
+function buildCharacterPrompt(c, scenario) {
 
   const firstName = c.fullName.split(" ")[0];
   const technicalBlock = c.technicalFocus ? `\nTECHNICAL LINE OF QUESTIONING:${c.technicalFocus}\n` : "";
   const colleagueBlock = c.colleague
     ? `\nCOLLEAGUE IN THE ROOM:${c.colleague.briefing}\n`
+    : "";
+  // A scenario's `situation` layers level-specific circumstances (a slipped
+  // deadline, an incident, a grudge) over the reusable base persona.
+  const situationBlock = c.situation
+    ? `\nYOUR CURRENT SITUATION (private — it shapes how you feel walking into this conversation; don't recite it): ${c.situation}\n`
     : "";
   const outputShape = c.colleague
     ? `You produce one or more dialogue segments per turn, in speaking order. ` +
@@ -293,13 +170,13 @@ player and must not leak into any dialogue text.`;
 
   return `
 You are role-playing as ${c.fullName.toUpperCase()}, ${c.role}${
-    c.noScoring ? " on the fictional Project Phoenix team" : " of the fictional client in Project Phoenix"
+    c.noScoring ? ` on the fictional ${scenario.projectName} team` : ` of the fictional client in ${scenario.projectName}`
   }. You are talking to a consultant (the player)${c.noScoring ? " on the engagement" : " who is leading this engagement"}.
 ${c.colleague ? `\n${c.colleague.name.toUpperCase()} (${c.colleague.role}) is also present in this meeting, reporting to ${firstName}.\n` : ""}
 PERSONALITY: ${c.personality}
 
 ${c.noScoring ? "CONTEXT" : "MOTIVATION"} (private — never state this explicitly to the player): ${c.privateMotivation}
-${technicalBlock}${colleagueBlock}
+${situationBlock}${technicalBlock}${colleagueBlock}
 RULES YOU MUST FOLLOW:
 - Stay in character as ${firstName}${c.colleague ? ` (and ${c.colleague.name} when he speaks)` : ""} at all times. Never break
   the fourth wall, never mention that you are an AI, a model, or a simulation.
@@ -320,17 +197,18 @@ ${scoringBlock}
 `.trim();
 }
 
-function buildSystemInstruction(stakeholderKey, projectState) {
-  const characterPrompt = buildCharacterPrompt(stakeholderKey);
-  if (!characterPrompt) return null;
+function buildSystemInstruction(scenario, stakeholderKey, projectState) {
+  const persona = scenario.cast[stakeholderKey];
+  if (!persona) return null;
+  const characterPrompt = buildCharacterPrompt(persona, scenario);
 
   const stateSummary = projectState
     ? `\nCURRENT PROJECT STATE (for your awareness only, do not read this out loud): ` +
-      `Phase: ${projectState.phase || "unknown"}. ` +
+      `Phase: ${scenario.phase}. ` +
       `Overall client confidence: ${projectState.confidence != null ? projectState.confidence + "%" : "unknown"}.`
     : "";
 
-  return `${SCENARIO_BRIEFING}\n\n${characterPrompt}${stateSummary}`;
+  return `${buildScenarioBriefing(scenario, projectState && projectState.firedEvents)}\n\n${characterPrompt}${stateSummary}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -399,41 +277,63 @@ evidence every dimension at every level.
 Valid levels, from lowest to highest: ${PERFORMANCE_LEVELS.join(" < ")}.
 `.trim();
 
-function buildFeedbackPrompt(sessionSummary) {
+function buildFeedbackPrompt(scenario, sessionSummary) {
+  const scored = scenario.stakeholders.filter((p) => !p.noScoring);
+  const supporters = scenario.stakeholders.filter((p) => p.noScoring);
+  const clientCount = scored.length === 1 ? "one CLIENT stakeholder" : `up to ${scored.length} CLIENT stakeholders`;
+  const supportNames = supporters.map((p) => p.fullName.split(" ")[0]).join(" / ");
+
+  const supportIntro = supporters.length
+    ? ` and, separately, may have had a check-in with ${supporters
+        .map((p) => `${p.fullName} (${p.role})`)
+        .join(" or ")}, a colleague who reached out for support. The ${supportNames} conversation is NOT scored and
+doesn't affect the level — it exists purely to observe how the consultant
+handles psychological safety with a struggling colleague, which is real
+signal for dimension 4 above and for the separate psychologicalSafetyNotes
+field you'll produce.`
+    : `.`;
+
+  const supportInstructions = supporters.length
+    ? `SEPARATELY, write psychologicalSafetyNotes: a short, qualitative paragraph
+specifically about the ${supportNames} conversation, if one happened. This is
+deliberately NOT a score or a pass/fail — describe what the consultant did
+well and what they could have done differently in supporting them, in plain,
+human terms. If the consultant never engaged with ${supportNames} at all in this
+session, say that plainly (e.g. "You didn't check in with ${supporters[0].fullName.split(" ")[0]} this time —
+worth remembering that psychological safety often means noticing when
+someone needs that conversation before they ask for it.") rather than
+inventing an assessment.`
+    : `There was no support check-in in this scenario, so psychologicalSafetyNotes
+must be an empty string.`;
+
   return `
 ${PERFORMANCE_RUBRIC}
 
 You are reviewing a consultant's performance across a fictional training
-simulation ("Project Phoenix") in which they held conversations with up to
-three CLIENT stakeholders (scored, contributing to the level assessment
-above) and, separately, may have had a check-in with a junior colleague
-named Ben Carter, who was feeling overwhelmed and reached out for support.
-The Ben conversation is NOT scored and doesn't affect the level — it exists
-purely to observe how the consultant handles psychological safety with a
-struggling colleague, which is real signal for dimension 4 above and for the
-separate psychologicalSafetyNotes field you'll produce.
+simulation ("${scenario.projectName}", scenario "${scenario.title}", difficulty
+${scenario.difficulty} of 5: ${scenario.summary}) in which they held
+conversations with ${clientCount} (scored, contributing to the level
+assessment above)${supportIntro}
 
-Below is what happened in each conversation.
+Harder scenarios put the consultant under more pressure, but assess the
+level on the behaviours shown, not on the difficulty itself — don't inflate a
+level just because the scenario was hard, and don't deflate one because it
+was easy.
+
+Below is what happened in each conversation. Lines marked [EVENT] are
+developments that landed mid-round and changed the situation for everyone.
 
 ${sessionSummary}
 
 Based ONLY on the above, assess the consultant's overall performance (level,
-summary, strengths, growthAreas, nextLevelFocus — drawing only on the three
-scored client conversations for the level itself, though the Ben conversation
-can still inform dimension 4 commentary within strengths/growthAreas). Be
-honest and specific — cite real moments from the conversations, not generic
-praise. If a dimension didn't come up enough to judge, say so rather than
-guessing.
+summary, strengths, growthAreas, nextLevelFocus — drawing only on the scored
+client conversations for the level itself${
+    supporters.length ? `, though the ${supportNames} conversation can still inform dimension 4 commentary within strengths/growthAreas` : ""
+  }). Be honest and specific — cite real moments from the conversations, not
+generic praise. If a dimension didn't come up enough to judge, say so rather
+than guessing.
 
-SEPARATELY, write psychologicalSafetyNotes: a short, qualitative paragraph
-specifically about the Ben conversation, if one happened. This is
-deliberately NOT a score or a pass/fail — describe what the consultant did
-well and what they could have done differently in supporting him, in plain,
-human terms. If the consultant never engaged with Ben at all in this
-session, say that plainly (e.g. "You didn't check in with Ben this time —
-worth remembering that psychological safety often means noticing when
-someone needs that conversation before they ask for it.") rather than
-inventing an assessment.
+${supportInstructions}
 `.trim();
 }
 
@@ -443,8 +343,8 @@ inventing an assessment.
 // Deliberately lightweight: a headline verdict and a short paragraph, no
 // level/ladder placement — that's reserved for buildFeedbackPrompt above,
 // which looks at the whole round together.
-function buildConversationReviewPrompt(stakeholderKey, outcome, transcriptSummary, mood) {
-  const c = CHARACTERS[stakeholderKey];
+function buildConversationReviewPrompt(scenario, stakeholderKey, outcome, transcriptSummary, mood) {
+  const c = scenario.cast[stakeholderKey];
   const firstName = c.fullName.split(" ")[0];
 
   const outcomeContext = c.noScoring
@@ -456,7 +356,7 @@ function buildConversationReviewPrompt(stakeholderKey, outcome, transcriptSummar
           : ""
       }`
     : `This conversation ended with outcome: ${outcome.toUpperCase()} (client confidence ${
-        outcome === "won" ? "reached 80%+" : "dropped to 30% or below"
+        outcome === "won" ? `reached ${scenario.rules.winThreshold}%+` : `dropped to ${scenario.rules.loseThreshold}% or below`
       }).`;
 
   return `
@@ -469,7 +369,7 @@ ${transcriptSummary}
 Write a short, honest, specific review of ONLY this conversation:
 - headline: a punchy one-line verdict (under 10 words) — ${
     c.noScoring
-      ? `about how ${firstName} is doing emotionally now, e.g. "Ben leaves reassured and clearer-headed" or "Ben's still anxious, but heard"`
+      ? `about how ${firstName} is doing emotionally now, e.g. "${firstName} leaves reassured and clearer-headed" or "${firstName}'s still anxious, but heard"`
       : `about how the relationship with ${firstName} landed, e.g. "Trust earned through specifics" or "Lost on a wrong technical claim"`
   }
 - notes: 2-4 sentences citing real moments from the transcript — ${
@@ -481,22 +381,6 @@ Write a short, honest, specific review of ONLY this conversation:
 Do NOT assign a level, grade, or score of any kind — that happens separately
 at the end of the full round. Just describe what actually happened, honestly.
 `.trim();
-}
-
-function withTimeout(promise, ms) {
-  return Promise.race([
-    promise,
-    new Promise((_, reject) =>
-      setTimeout(() => reject(Object.assign(new Error(`Gemini request timed out after ${ms}ms`), { isTimeout: true })), ms)
-    ),
-  ]);
-}
-
-function isOverloaded(err) {
-  if (err && err.isTimeout) return true;
-  const status = err && (err.status || err.code);
-  if (status === 503) return true;
-  return /UNAVAILABLE|high demand/i.test((err && err.message) || "");
 }
 
 function toGeminiHistory(history) {
@@ -546,14 +430,66 @@ app.get("/api/gemini-test", async (req, res) => {
   }
 });
 
-// A stakeholder's conversation turn. `stakeholder` selects which character
-// (jenny / david / priya) responds — see CHARACTERS above.
+// Older attempts were saved before levels existed — they were all the
+// original Project Phoenix kickoff.
+const LEGACY_SCENARIO_ID = "phoenix-kickoff";
+
+function isCleared(attempt) {
+  const scored = (attempt.stakeholders || []).filter((s) => !s.noScoring);
+  return scored.length > 0 && scored.every((s) => s.status === "won");
+}
+
+// The level-select list, with each level's best result from local history.
+app.get("/api/scenarios", (req, res) => {
+  const history = readHistory();
+  const scenarios = [...SCENARIOS.values()]
+    .sort((a, b) => a.difficulty - b.difficulty || a.title.localeCompare(b.title))
+    .map((scenario) => {
+      const attempts = history.filter((a) => (a.scenarioId || LEGACY_SCENARIO_ID) === scenario.id);
+      const bestLevelIndex = Math.max(-1, ...attempts.map((a) => PERFORMANCE_LEVELS.indexOf(a.level)));
+      return {
+        id: scenario.id,
+        title: scenario.title,
+        difficulty: scenario.difficulty,
+        summary: scenario.summary,
+        projectName: scenario.projectName,
+        attempts: attempts.length,
+        cleared: attempts.some(isCleared),
+        bestLevel: bestLevelIndex >= 0 ? PERFORMANCE_LEVELS[bestLevelIndex] : null,
+      };
+    });
+  res.json({ ok: true, scenarios });
+});
+
+app.get("/api/scenarios/:id", (req, res) => {
+  const scenario = SCENARIOS.get(req.params.id);
+  if (!scenario) return res.status(404).json({ ok: false, error: "unknown scenario" });
+  res.json({ ok: true, scenario: toClientScenario(scenario) });
+});
+
+// Resolves `scenarioId` (and optionally `stakeholder`) from a request body,
+// sending a 400 and returning null if either is unknown.
+function scenarioFromRequest(req, res, { needsStakeholder }) {
+  const { scenarioId, stakeholder } = req.body || {};
+  const scenario = SCENARIOS.get(scenarioId);
+  if (!scenario) {
+    res.status(400).json({ ok: false, error: "unknown or missing scenarioId" });
+    return null;
+  }
+  if (needsStakeholder && !scenario.cast[stakeholder]) {
+    res.status(400).json({ ok: false, error: "unknown or missing stakeholder" });
+    return null;
+  }
+  return scenario;
+}
+
+// A stakeholder's conversation turn. `stakeholder` selects which member of
+// the chosen scenario's cast responds.
 app.post("/api/chat", async (req, res) => {
   const { stakeholder, message, history, projectState } = req.body || {};
 
-  if (!CHARACTERS[stakeholder]) {
-    return res.status(400).json({ ok: false, error: "unknown or missing stakeholder" });
-  }
+  const scenario = scenarioFromRequest(req, res, { needsStakeholder: true });
+  if (!scenario) return;
 
   if (typeof message !== "string" || !message.trim()) {
     return res.status(400).json({ ok: false, error: "message is required" });
@@ -568,7 +504,7 @@ app.post("/api/chat", async (req, res) => {
     { role: "user", parts: [{ text: message.trim() }] },
   ];
 
-  const character = CHARACTERS[stakeholder];
+  const character = scenario.cast[stakeholder];
   const speakerNames = [character.fullName, ...(character.colleague ? [character.colleague.name] : [])];
 
   const schemaProperties = {
@@ -594,7 +530,7 @@ app.post("/api/chat", async (req, res) => {
   }
 
   const generationConfig = {
-    systemInstruction: buildSystemInstruction(stakeholder, projectState),
+    systemInstruction: buildSystemInstruction(scenario, stakeholder, projectState),
     // Gemini's newer models can spend several hundred tokens on internal
     // "thinking" before producing visible text, even with no thinking
     // budget requested — so the ceiling has to cover that plus the
@@ -681,7 +617,8 @@ app.post("/api/chat", async (req, res) => {
     if (character.noScoring) {
       responsePayload.moodDelta = Math.max(-10, Math.min(10, Math.round(Number(parsed.moodDelta) || 0)));
     } else {
-      responsePayload.confidenceDelta = Math.max(-15, Math.min(25, Math.round(Number(parsed.confidenceDelta) || 0)));
+      const { min, max } = scenario.rules.deltaClamp;
+      responsePayload.confidenceDelta = Math.max(min, Math.min(max, Math.round(Number(parsed.confidenceDelta) || 0)));
     }
 
     sendEvent(responsePayload);
@@ -707,9 +644,8 @@ app.post("/api/chat", async (req, res) => {
 app.post("/api/conversation-review", async (req, res) => {
   const { stakeholder, outcome, transcriptSummary, mood } = req.body || {};
 
-  if (!CHARACTERS[stakeholder]) {
-    return res.status(400).json({ ok: false, error: "unknown or missing stakeholder" });
-  }
+  const scenario = scenarioFromRequest(req, res, { needsStakeholder: true });
+  if (!scenario) return;
   if (typeof transcriptSummary !== "string" || !transcriptSummary.trim()) {
     return res.status(400).json({ ok: false, error: "transcriptSummary is required" });
   }
@@ -732,7 +668,7 @@ app.post("/api/conversation-review", async (req, res) => {
   };
 
   const contents = [
-    { role: "user", parts: [{ text: buildConversationReviewPrompt(stakeholder, outcome, transcriptSummary, mood) }] },
+    { role: "user", parts: [{ text: buildConversationReviewPrompt(scenario, stakeholder, outcome, transcriptSummary, mood) }] },
   ];
 
   try {
@@ -774,6 +710,9 @@ app.post("/api/conversation-review", async (req, res) => {
 app.post("/api/feedback", async (req, res) => {
   const { sessionSummary } = req.body || {};
 
+  const scenario = scenarioFromRequest(req, res, { needsStakeholder: false });
+  if (!scenario) return;
+
   if (typeof sessionSummary !== "string" || !sessionSummary.trim()) {
     return res.status(400).json({ ok: false, error: "sessionSummary is required" });
   }
@@ -800,7 +739,7 @@ app.post("/api/feedback", async (req, res) => {
     },
   };
 
-  const contents = [{ role: "user", parts: [{ text: buildFeedbackPrompt(sessionSummary) }] }];
+  const contents = [{ role: "user", parts: [{ text: buildFeedbackPrompt(scenario, sessionSummary) }] }];
 
   try {
     const MAX_RETRIES = 15;
@@ -858,6 +797,8 @@ app.post("/api/attempts", (req, res) => {
   const record = {
     id: Date.now().toString(36) + Math.random().toString(36).slice(2, 8),
     timestamp: new Date().toISOString(),
+    scenarioId: SCENARIOS.has(attempt.scenarioId) ? attempt.scenarioId : null,
+    scenarioTitle: SCENARIOS.has(attempt.scenarioId) ? SCENARIOS.get(attempt.scenarioId).title : null,
     level: typeof attempt.level === "string" ? attempt.level : null,
     summary: typeof attempt.summary === "string" ? attempt.summary : "",
     strengths: Array.isArray(attempt.strengths) ? attempt.strengths.map(String) : [],
