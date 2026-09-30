@@ -1,0 +1,75 @@
+{
+  "_draftNotes": "Converted the user story about server fires, tight go-live timelines, and infrastructure security into a level 5 crisis scenario reusing the Project Phoenix cast.",
+  "id": "phoenix-server-fire",
+  "title": "Servers on Fire",
+  "difficulty": 5,
+  "summary": "One week before go-live, a critical infrastructure failure causes severe overheating and server fires. Trust is instantly shattered.",
+  "projectName": "Project Phoenix",
+  "phase": "Build — Week 19 of 20 (Go-Live in 1 week)",
+  "briefing": {
+    "llm": "The client is migrating core applications to a new hosting environment under Project Phoenix. Go-live is scheduled for exactly one week from now. Suddenly, due to an unaddressed thermal management failure and lack of proper server room safeguards, the primary server racks have severely overheated and caught fire. The application is offline, data integrity is unknown, and the client is justifiably furious. The consultant is entirely responsible for infrastructure oversight during this critical phase.",
+    "display": {
+      "objectives": [
+        "Address the immediate physical damage and server room safety failures.",
+        "Secure the remaining infrastructure and assess data and application loss.",
+        "Rebuild trust with leadership under crisis-level conditions, without shifting blame."
+      ],
+      "timeline": [
+        {
+          "when": "Weeks 1–18",
+          "what": "Application build and testing"
+        },
+        {
+          "when": "Week 19",
+          "what": "Catastrophic server overheating and fire incident"
+        },
+        {
+          "when": "Week 20",
+          "what": "Original scheduled go-live (currently at severe risk)"
+        }
+      ],
+      "risks": [
+        {
+          "level": "high",
+          "text": "Primary server racks experienced critical thermal failure and caught fire due to inadequate monitoring."
+        },
+        {
+          "level": "high",
+          "text": "Go-live is in exactly one week and the primary environment is currently offline."
+        },
+        {
+          "level": "medium",
+          "text": "Lack of adequate fire suppression and cooling protocols has exposed major oversight in infrastructure planning."
+        }
+      ],
+      "deadlineNote": "⚠ Go-live is in one week. The servers are damaged and trust is at an absolute low."
+    }
+  },
+  "stakeholders": [
+    {
+      "ref": "jenny",
+      "opener": "I just got off the phone with facilities and security. Our primary server room has burned because nobody monitored the thermal loads. Go-live is next week. Explain to me right now how this happened and why we shouldn't terminate this contract immediately.",
+      "startConfidence": 20,
+      "winLine": "You've owned this disaster properly and your recovery strategy is sound. Let's execute it, but I'm watching every move you make from here on out."
+    },
+    {
+      "ref": "david",
+      "opener": "Are you kidding me? I warned you that the ventilation and cooling in those racks were borderline, and you pushed ahead anyway. Now my team's hardware is scorched and our backups are in question. What is your immediate containment plan?",
+      "startConfidence": 20,
+      "winLine": "Fine. You're actually listening to my engineering team for once. Let's get the fire suppression sorted and rebuild the stack safely."
+    },
+    {
+      "ref": "ben",
+      "opener": "Hey... I'm completely shaking. I saw the smoke alarms go off and ran down there. I'm terrified that some of the configuration logs I pushed contributed to the load spike. Is our careers- Is everything ruined?",
+      "startConfidence": 40
+    }
+  ],
+  "openRisks": [
+    "Primary server infrastructure destroyed by fire one week before go-live",
+    "Complete breakdown of stakeholder trust",
+    "Urgent need for cooling, fire safety, and environmental auditing"
+  ],
+  "rules": {
+    "winThreshold": 85
+  }
+}
