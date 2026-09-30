@@ -155,9 +155,47 @@
 
     </div>
 
+    <div class="launcher-panel" id="launcher-panel">
+      <div class="launcher-head">
+        <div>
+          <h3>Negotiate Your Thinking Time</h3>
+          <p class="launcher-sub">Press and hold the plunger, then let go. The further the ball rolls, the longer you get to answer each message. Too far and it's out of scope. <span id="launcher-shots">3 shots left</span>.</p>
+        </div>
+        <div class="launcher-readout" id="launcher-readout" aria-live="polite">
+          <div class="launcher-readout-time" id="launcher-time">—:—</div>
+          <div class="launcher-readout-zone" id="launcher-zone">Not yet negotiated</div>
+        </div>
+      </div>
+
+      <div class="launcher-rig">
+        <button type="button" class="launcher-plunger" id="launcher-plunger"
+                aria-label="Press and hold to charge, release to fire the ball">
+          <span class="plunger-spring" id="plunger-spring"></span>
+          <span class="plunger-knob">HOLD</span>
+        </button>
+        <div class="launcher-track" id="launcher-track">
+          <div class="launcher-zones">
+            <span style="flex:20">Elevator<br>Pitch</span>
+            <span style="flex:25">Quick<br>Sync</span>
+            <span style="flex:25">Let Me Take<br>That Away</span>
+            <span style="flex:20">Circle<br>Back</span>
+            <span style="flex:10">Fully<br>Billable</span>
+          </div>
+          <div class="launcher-line"></div>
+          <div class="launcher-ball" id="launcher-ball"></div>
+          <div class="launcher-cliff" aria-hidden="true">OUT OF<br>SCOPE</div>
+        </div>
+      </div>
+
+      <div class="launcher-power" aria-hidden="true">
+        <div class="launcher-power-fill" id="launcher-power-fill"></div>
+      </div>
+      <p class="launcher-quip" id="launcher-quip">Hold the plunger to start negotiating.</p>
+    </div>
+
     <div class="nav-buttons">
       <button class="btn btn-secondary" id="btn-back-briefing">Back</button>
-      <button class="btn btn-primary" id="btn-to-simulation">Start Simulation</button>
+      <button class="btn btn-primary" id="btn-to-simulation" disabled title="Fire the ball first to set your response time">Start Simulation</button>
     </div>
   </section>
 
@@ -312,6 +350,7 @@
 
 </div>
 
+<script src="launcher.js"></script>
 <script src="script.js"></script>
 </body>
 </html>

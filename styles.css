@@ -847,3 +847,234 @@ body {
   .messages { max-height: 340px; }
   .nav-buttons { flex-wrap: wrap; gap: 12px; }
 }
+
+.btn:disabled,
+.btn:disabled:hover {
+  opacity: 0.45;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+/* ---------- Response-time launcher (Stakeholders screen) ---------- */
+.launcher-panel {
+  margin-top: 28px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 22px 24px 18px;
+}
+
+.launcher-head {
+  display: flex;
+  gap: 20px;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+.launcher-head h3 { margin: 0 0 6px; font-size: 18px; }
+.launcher-sub { margin: 0; color: var(--text-dim); font-size: 14px; max-width: 640px; line-height: 1.5; }
+#launcher-shots { color: var(--warning); font-weight: 600; }
+
+.launcher-readout {
+  min-width: 150px;
+  text-align: right;
+  flex-shrink: 0;
+}
+.launcher-readout-time {
+  font-family: "Courier New", monospace;
+  font-size: 34px;
+  font-weight: 700;
+  color: var(--success);
+  line-height: 1;
+}
+.launcher-readout-zone { font-size: 12px; color: var(--text-dim); margin-top: 4px; text-transform: uppercase; letter-spacing: 0.06em; }
+.launcher-readout-bad .launcher-readout-time { color: var(--danger); }
+
+.launcher-rig {
+  display: flex;
+  align-items: flex-end;
+  gap: 0;
+  margin-top: 18px;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* The plunger: a knob pushing into a spring. --charge (0–1) compresses it. */
+.launcher-plunger {
+  --charge: 0;
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 92px;
+  height: 44px;
+  padding: 0;
+  margin-bottom: -10px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  touch-action: none;
+  flex-shrink: 0;
+}
+.launcher-plunger:disabled { cursor: not-allowed; opacity: 0.4; }
+.launcher-plunger:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; border-radius: 10px; }
+
+.plunger-knob {
+  position: relative;
+  z-index: 1;
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, var(--danger), #b8405a);
+  color: white;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 14px rgba(232,96,124,0.4);
+  transform: translateX(calc(var(--charge) * 26px));
+}
+.plunger-spring {
+  position: absolute;
+  left: 40px;
+  right: 0;
+  top: 50%;
+  height: 16px;
+  margin-top: -8px;
+  background: repeating-linear-gradient(90deg, var(--text-dim) 0 2px, transparent 2px 7px);
+  border-top: 2px solid var(--border);
+  border-bottom: 2px solid var(--border);
+  transform-origin: right center;
+  transform: scaleX(calc(1 - var(--charge) * 0.55));
+}
+.launcher-plunger-charging .plunger-knob { box-shadow: 0 0 0 4px rgba(232,96,124,0.25), 0 4px 18px rgba(232,96,124,0.6); }
+.launcher-plunger-overcharged { animation: plunger-shake 0.09s linear infinite; }
+
+@keyframes plunger-shake {
+  0% { transform: translate(0, 0); }
+  25% { transform: translate(-2px, 1px); }
+  50% { transform: translate(1px, -1px); }
+  75% { transform: translate(-1px, -1px); }
+  100% { transform: translate(2px, 1px); }
+}
+
+.launcher-track {
+  position: relative;
+  flex: 1;
+  height: 96px;
+  padding-right: 72px;
+  overflow: hidden; /* an overshooting ball drops into the cliff and out of sight */
+}
+
+.launcher-zones {
+  position: absolute;
+  left: 0;
+  right: 72px;
+  top: 0;
+  display: flex;
+  font-size: 11px;
+  line-height: 1.25;
+  color: var(--text-dim);
+  text-align: center;
+}
+.launcher-zones span {
+  border-left: 1px dashed var(--border);
+  padding: 0 4px;
+  height: 70px;
+}
+.launcher-zones span:last-child { border-right: 1px dashed var(--border); color: var(--success); }
+
+.launcher-line {
+  position: absolute;
+  left: 0;
+  right: 72px;
+  bottom: 12px;
+  height: 4px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, var(--warning), var(--accent) 45%, var(--success));
+}
+
+.launcher-ball {
+  position: absolute;
+  left: 0;
+  bottom: 16px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #fff 0 15%, #d8e2f5 40%, #7f93bb 100%);
+  box-shadow: 0 3px 8px rgba(0,0,0,0.45);
+  transition: opacity 0.4s ease;
+  will-change: transform;
+}
+.launcher-ball::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 2px;
+  bottom: 2px;
+  width: 2px;
+  margin-left: -1px;
+  background: rgba(15,23,42,0.35);
+  border-radius: 1px;
+}
+.launcher-ball-gone { opacity: 0; }
+
+.launcher-cliff {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 64px;
+  height: 58px;
+  border-left: 2px dashed var(--danger);
+  color: var(--danger);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  text-align: center;
+  padding-bottom: 2px;
+  background: linear-gradient(180deg, transparent, rgba(232,96,124,0.12));
+}
+
+.launcher-power {
+  position: relative;
+  height: 8px;
+  margin: 18px 0 0 0;
+  border-radius: 4px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+/* Tick at 100% charge (2/3 of the bar, since the bar runs to 150%). */
+.launcher-power::after {
+  content: "";
+  position: absolute;
+  left: 66.66%;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--danger);
+}
+.launcher-power-fill {
+  height: 100%;
+  width: 0;
+  background: linear-gradient(90deg, var(--accent), var(--success));
+}
+.launcher-power-fill.launcher-power-danger { background: linear-gradient(90deg, var(--warning), var(--danger)); }
+
+.launcher-quip {
+  margin: 10px 0 0;
+  font-size: 13px;
+  color: var(--text-dim);
+  font-style: italic;
+  min-height: 1.3em;
+}
+
+@media (max-width: 700px) {
+  .launcher-head { flex-direction: column; }
+  .launcher-readout { text-align: left; }
+  .launcher-zones { font-size: 9px; }
+  .launcher-plunger { width: 72px; }
+}
