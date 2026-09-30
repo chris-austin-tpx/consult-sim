@@ -49,6 +49,103 @@ function isOutrageous(text) {
   return INSULT_PATTERNS.some((re) => re.test(text));
 }
 
+// ---------------------------------------------------------------------------
+// Illustrated avatars — simple SVG cartoon faces (no image assets), one hair
+// silhouette per character, with a facial expression that reflects how that
+// stakeholder currently feels toward the player, plus transient head-motion
+// reactions (nod/shake/rage/cheer) on the moment their feeling changes.
+// ---------------------------------------------------------------------------
+
+const AVATAR_HAIR = {
+  // Jenny — neat professional bob.
+  jenny: { fill: "#3b2a20", d: "M18,46 Q16,10 50,10 Q84,10 82,46 L82,56 Q75,44 75,38 Q75,20 50,20 Q25,20 25,38 Q25,44 18,56 Z" },
+  // David — short, greying, receding — plus simple glasses drawn separately.
+  david: { fill: "#9a9a9a", d: "M20,42 Q18,26 30,20 Q26,30 27,42 Z M80,42 Q82,26 70,20 Q74,30 73,42 Z M30,18 Q50,10 70,18 Q66,14 50,14 Q34,14 30,18 Z" },
+  // Priya — longer hair past the jawline.
+  priya: { fill: "#241a12", d: "M17,48 Q15,10 50,9 Q85,10 83,48 L83,66 Q76,60 75,48 Q75,20 50,19 Q25,20 25,48 Q24,60 17,66 Z" },
+  // Ben — messy, spiky, younger.
+  ben: { fill: "#6b4a30", d: "M20,40 L26,16 L34,32 L42,12 L50,30 L58,12 L66,32 L74,16 L80,40 Q65,26 50,28 Q35,26 20,40 Z" },
+};
+
+// Facial feature paths per emotional state, in the same 0-100 viewBox as the
+// face. `eyeRy` narrows the eyes for anger, widens them for worry.
+const AVATAR_EXPRESSIONS = {
+  neutral: { browL: "M30,42 Q38,38 46,42", browR: "M54,42 Q62,38 70,42", mouth: "M38,70 Q50,74 62,70", eyeRy: 3.2 },
+  happy: { browL: "M30,40 Q38,37 46,40", browR: "M54,40 Q62,37 70,40", mouth: "M34,68 Q50,83 66,68", eyeRy: 3.2 },
+  worried: { browL: "M30,45 Q38,38 46,42", browR: "M70,45 Q62,38 54,42", mouth: "M38,73 Q50,69 62,73", eyeRy: 3.7 },
+  angry: { browL: "M28,37 L46,46", browR: "M72,37 L54,46", mouth: "M34,75 Q50,63 66,75", eyeRy: 1.8 },
+};
+
+// SVG namespace helper — createElement won't work for SVG children.
+function svgEl(tag, attrs) {
+  const node = document.createElementNS("http://www.w3.org/2000/svg", tag);
+  Object.entries(attrs || {}).forEach(([k, v]) => node.setAttribute(k, v));
+  return node;
+}
+
+function buildAvatarFace(key, expressionKey) {
+  const hair = AVATAR_HAIR[key] || AVATAR_HAIR.ben;
+  const expr = AVATAR_EXPRESSIONS[expressionKey] || AVATAR_EXPRESSIONS.neutral;
+
+  const svg = svgEl("svg", { viewBox: "0 0 100 100", class: "avatar-face-svg" });
+  svg.appendChild(svgEl("circle", { cx: 50, cy: 56, r: 34, fill: "#f4d9c0" })); // face/skin
+  svg.appendChild(svgEl("path", { d: hair.d, fill: hair.fill })); // hair (drawn over the top edge of the face)
+  if (key === "david") {
+    // Simple glasses: two rims + bridge.
+    svg.appendChild(svgEl("circle", { cx: 38, cy: 51, r: 8, fill: "none", stroke: "#3b3b3b", "stroke-width": 2.5 }));
+    svg.appendChild(svgEl("circle", { cx: 62, cy: 51, r: 8, fill: "none", stroke: "#3b3b3b", "stroke-width": 2.5 }));
+    svg.appendChild(svgEl("line", { x1: 46, y1: 51, x2: 54, y2: 51, stroke: "#3b3b3b", "stroke-width": 2.5 }));
+  }
+  svg.appendChild(svgEl("ellipse", { cx: 38, cy: 51, rx: 3.2, ry: expr.eyeRy, fill: "#2a2018" }));
+  svg.appendChild(svgEl("ellipse", { cx: 62, cy: 51, rx: 3.2, ry: expr.eyeRy, fill: "#2a2018" }));
+  svg.appendChild(svgEl("path", { d: expr.browL, stroke: "#2a2018", "stroke-width": 3, fill: "none", "stroke-linecap": "round" }));
+  svg.appendChild(svgEl("path", { d: expr.browR, stroke: "#2a2018", "stroke-width": 3, fill: "none", "stroke-linecap": "round" }));
+  svg.appendChild(svgEl("path", { d: expr.mouth, stroke: "#7a3b3b", "stroke-width": 3, fill: "none", "stroke-linecap": "round" }));
+  return svg;
+}
+
+// What a stakeholder is currently feeling, purely from state already on the
+// object — no separate tracking needed. "angry"/"happy" are terminal (won/
+// lost); everything else reflects the live confidence or mood trend.
+function computeExpressionKey(s) {
+  if (s.status === "lost") return "angry";
+  if (s.status === "won") return "happy";
+  if (s.noScoring) {
+    if (s.mood >= 20) return "happy";
+    if (s.mood <= -20) return "worried";
+    return "neutral";
+  }
+  if (s.confidence >= 70) return "happy";
+  if (s.confidence <= 35) return "worried";
+  return "neutral";
+}
+
+function refreshAvatarFace(container, s) {
+  container.innerHTML = "";
+  container.appendChild(buildAvatarFace(s.key, computeExpressionKey(s)));
+}
+
+function refreshActiveAvatarFace() {
+  const container = document.getElementById("active-avatar");
+  if (container) refreshAvatarFace(container, stakeholders[state.activeStakeholder]);
+}
+
+const AVATAR_REACTION_DURATIONS = { nod: 600, shake: 600, cheer: 700, rage: 900 };
+
+// Only animates when this stakeholder is the one currently on screen —
+// there's only one avatar element in the DOM, so a background reaction
+// (e.g. a scenario event affecting someone else) simply updates their
+// state silently until the player switches to them.
+function triggerAvatarReaction(idx, reaction) {
+  if (!reaction || idx !== state.activeStakeholder) return;
+  const el = document.getElementById("active-avatar");
+  if (!el) return;
+  Object.keys(AVATAR_REACTION_DURATIONS).forEach((r) => el.classList.remove(`avatar-anim-${r}`));
+  void el.offsetWidth; // restart the animation even if the same class was just removed
+  el.classList.add(`avatar-anim-${reaction}`);
+  setTimeout(() => el.classList.remove(`avatar-anim-${reaction}`), AVATAR_REACTION_DURATIONS[reaction]);
+}
+
 // The chosen scenario's cast, with runtime state layered on by
 // initStakeholderRuntimeState. Empty until a scenario is picked.
 let stakeholders = [];
@@ -271,7 +368,9 @@ function renderScenarioScreens() {
 
 function renderStakeholderCard(s) {
   const card = el("div", "stakeholder-card" + (s.noScoring ? " stakeholder-card-support" : ""));
-  card.appendChild(el("div", `avatar ${s.avatarClass}`, s.initials));
+  const avatarContainer = el("div", `avatar ${s.avatarClass}`);
+  avatarContainer.appendChild(buildAvatarFace(s.key, "neutral"));
+  card.appendChild(avatarContainer);
   card.appendChild(el("h3", null, s.name));
   card.appendChild(el("div", "role", s.role));
 
@@ -320,8 +419,8 @@ function highlightActiveSwitch() {
 function renderActiveStakeholder() {
   const s = stakeholders[state.activeStakeholder];
   const avatarEl = document.getElementById("active-avatar");
-  avatarEl.textContent = s.initials;
   avatarEl.className = "avatar avatar-sm " + s.avatarClass;
+  refreshAvatarFace(avatarEl, s);
   document.getElementById("active-name").textContent = s.name;
   document.getElementById("active-role").textContent = s.role;
 
@@ -605,6 +704,11 @@ async function sendResponse() {
     const moodDelta = await getReplyAndDelta(text, idx);
     if (typeof moodDelta === "number") {
       s.mood = Math.max(-50, Math.min(50, s.mood + moodDelta));
+      if (idx === state.activeStakeholder) {
+        if (moodDelta > 0) triggerAvatarReaction(idx, "nod");
+        else if (moodDelta < 0) triggerAvatarReaction(idx, "shake");
+        refreshActiveAvatarFace();
+      }
     }
     if (s.status === "active") s.deadline = Date.now() + responseTimeLimitMs;
     if (idx === state.activeStakeholder) updateResponseTimerDisplay();
@@ -676,6 +780,10 @@ function fireEvent(event) {
     if (!s.noScoring && event.confidenceShift) {
       s.confidence = Math.max(0, Math.min(100, s.confidence + event.confidenceShift));
       updateSentimentRow(idx);
+      if (idx === state.activeStakeholder) {
+        triggerAvatarReaction(idx, event.confidenceShift > 0 ? "nod" : "shake");
+        refreshActiveAvatarFace();
+      }
     }
   });
   updateConfidenceMeter();
@@ -814,10 +922,19 @@ function applyConfidenceDelta(idx, delta) {
   if (idx === state.activeStakeholder) updateConfidenceMeter();
 
   const { winThreshold, loseThreshold, lossGraceMessages } = rules();
-  if (s.confidence >= winThreshold) return "won";
-
   const pastGrace = s.messageCount >= lossGraceMessages;
   const droppedToOrBelowThreshold = s.confidence <= loseThreshold && s.confidence < previousConfidence;
+
+  const willConclude = s.confidence >= winThreshold || (pastGrace && droppedToOrBelowThreshold);
+  if (idx === state.activeStakeholder) {
+    // A nod/shake here only when this exchange DOESN'T end the conversation
+    // outright — concludeConversation plays its own cheer/rage reaction for
+    // that, so this avoids double-animating on the same turn.
+    if (!willConclude && delta !== 0) triggerAvatarReaction(idx, delta > 0 ? "nod" : "shake");
+    refreshActiveAvatarFace();
+  }
+
+  if (s.confidence >= winThreshold) return "won";
   if (pastGrace && droppedToOrBelowThreshold) return "lost";
 
   return null;
@@ -829,6 +946,11 @@ function concludeConversation(idx, outcome) {
   s.deadline = null;
   updateSentimentRow(idx);
   logAction(`Conversation with ${s.name} ended — ${outcome === "won" ? "Won" : "Lost"}`);
+
+  if (idx === state.activeStakeholder) {
+    triggerAvatarReaction(idx, outcome === "lost" ? "rage" : "cheer");
+    refreshActiveAvatarFace();
+  }
 
   if (outcome === "lost") {
     // Losing any one SCORED stakeholder ends the whole round — game over.
@@ -904,7 +1026,11 @@ function handleResponseTimeout(idx) {
     s.mood = Math.max(-50, Math.min(50, s.mood + TIMEOUT_MOOD_PENALTY));
     appendMessage(idx, s.timeoutLine, "assistant");
     s.deadline = Date.now() + responseTimeLimitMs; // no hard fail — just a fresh window
-    if (idx === state.activeStakeholder) updateComposerAndBanner();
+    if (idx === state.activeStakeholder) {
+      triggerAvatarReaction(idx, "shake");
+      refreshActiveAvatarFace();
+      updateComposerAndBanner();
+    }
     return;
   }
 
