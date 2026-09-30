@@ -439,6 +439,46 @@ inventing an assessment.
 `.trim();
 }
 
+// ---------------------------------------------------------------------------
+// Learning resources — a FIXED, hand-verified catalog. Gemini is only ever
+// asked to SELECT which of these ids are relevant to a given conversation;
+// it never generates or sees the actual URL, so there is no way for it to
+// hallucinate a link. Every URL here was checked to actually resolve before
+// being added — extend this list only the same way (verify first).
+// ---------------------------------------------------------------------------
+const LEARNING_RESOURCES = {
+  delta_lake: {
+    title: "What is Delta Lake in Azure Databricks?",
+    url: "https://learn.microsoft.com/en-us/azure/databricks/delta/",
+    description: "Official Microsoft Learn overview of Delta Lake, the storage layer under every Databricks table.",
+  },
+  adls_gen2: {
+    title: "Azure Data Lake Storage Gen2 overview",
+    url: "https://learn.microsoft.com/en-us/azure/storage/blobs/data-lake-storage-introduction",
+    description: "How ADLS Gen2 works as the underlying cloud storage beneath a Databricks lakehouse.",
+  },
+  shared_responsibility: {
+    title: "Shared responsibility in the cloud",
+    url: "https://learn.microsoft.com/en-us/azure/security/fundamentals/shared-responsibility",
+    description: "Microsoft's official breakdown of what Azure secures versus what the customer is responsible for.",
+  },
+  databricks_network_security: {
+    title: "Azure Databricks networking and security",
+    url: "https://learn.microsoft.com/en-us/azure/databricks/security/network/",
+    description: "How workspace isolation, private connectivity and access controls work on Azure Databricks.",
+  },
+  medallion_architecture: {
+    title: "What is the medallion lakehouse architecture?",
+    url: "https://learn.microsoft.com/en-us/azure/databricks/lakehouse/medallion",
+    description: "The bronze/silver/gold layering pattern used to progressively clean and enrich data.",
+  },
+  psychological_safety: {
+    title: "What Is Psychological Safety?",
+    url: "https://hbr.org/2023/02/what-is-psychological-safety",
+    description: "Harvard Business Review's explainer on psychological safety at work and why it matters.",
+  },
+};
+
 // A quick, per-conversation qualitative review — shown the moment a single
 // stakeholder's conversation concludes (win/loss, or Ben's manual close),
 // rather than making the player wait for the full end-of-round review.
@@ -482,6 +522,16 @@ Write a short, honest, specific review of ONLY this conversation:
 
 Do NOT assign a level, grade, or score of any kind — that happens separately
 at the end of the full round. Just describe what actually happened, honestly.
+
+SEPARATELY, choose relatedResources: zero or more ids from this fixed list of
+learning resources, ONLY where the topic genuinely came up in the transcript
+above — do not force a match, and return an empty list if none apply:
+${Object.entries(LEARNING_RESOURCES)
+  .map(([id, r]) => `- "${id}": ${r.title} — ${r.description}`)
+  .join("\n")}
+
+You must use these exact ids and nothing else — never invent a new id, a
+title, or a URL of your own.
 `.trim();
 }
 
@@ -728,8 +778,12 @@ app.post("/api/conversation-review", async (req, res) => {
       properties: {
         headline: { type: "STRING" },
         notes: { type: "STRING" },
+        relatedResources: {
+          type: "ARRAY",
+          items: { type: "STRING", enum: Object.keys(LEARNING_RESOURCES) },
+        },
       },
-      required: ["headline", "notes"],
+      required: ["headline", "notes", "relatedResources"],
     },
   };
 
@@ -761,10 +815,17 @@ app.post("/api/conversation-review", async (req, res) => {
     const rawText = (result.text || "").trim();
     const parsed = JSON.parse(rawText);
 
+    // Defensive filter: only ids that are actually in our verified catalog
+    // ever make it out, even if the model returned something unexpected.
+    const relatedResources = (Array.isArray(parsed.relatedResources) ? parsed.relatedResources : [])
+      .filter((id) => Object.prototype.hasOwnProperty.call(LEARNING_RESOURCES, id))
+      .map((id) => ({ id, ...LEARNING_RESOURCES[id] }));
+
     res.json({
       ok: true,
       headline: String(parsed.headline || ""),
       notes: String(parsed.notes || ""),
+      relatedResources,
     });
   } catch (err) {
     console.error("[conversation-review] Gemini request failed:", err && err.message ? err.message : err);

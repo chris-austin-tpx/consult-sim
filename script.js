@@ -677,9 +677,23 @@ function updateConfidenceMeter() {
 
 function renderBannerReview(s) {
   const notesEl = document.getElementById("banner-notes");
+  const resourcesEl = document.getElementById("banner-resources");
   notesEl.classList.remove("banner-notes-loading");
+  resourcesEl.innerHTML = "";
+
   if (s.review) {
     notesEl.textContent = s.review.headline ? `“${s.review.headline}” — ${s.review.notes}` : s.review.notes;
+
+    (s.review.resources || []).forEach((resource) => {
+      const link = document.createElement("a");
+      link.className = "banner-resource-link";
+      link.href = resource.url;
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      link.textContent = `📖 ${resource.title}`;
+      link.title = resource.description || "";
+      resourcesEl.appendChild(link);
+    });
   } else {
     notesEl.textContent = "Assessing this conversation…";
     notesEl.classList.add("banner-notes-loading");
@@ -837,10 +851,16 @@ async function requestConversationReview(idx, outcome) {
     const data = await response.json();
     if (!response.ok || !data.ok) throw new Error(data.error || "Request failed");
 
-    s.review = { headline: data.headline, notes: data.notes };
+    s.review = {
+      headline: data.headline,
+      notes: data.notes,
+      // Real objects from the server's fixed, hand-verified catalog — see
+      // LEARNING_RESOURCES in server.js. Never raw model output.
+      resources: Array.isArray(data.relatedResources) ? data.relatedResources : []
+    };
   } catch (err) {
     console.warn(`Conversation review unavailable for ${s.name}:`, err.message || err);
-    s.review = { headline: "", notes: "" }; // fail silently — the outcome banner itself still shows
+    s.review = { headline: "", notes: "", resources: [] }; // fail silently — the outcome banner itself still shows
   }
 
   if (idx === state.activeStakeholder) updateComposerAndBanner();
